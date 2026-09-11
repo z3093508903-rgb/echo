@@ -11,8 +11,8 @@
 | 上游 | `MSCNUAN/message-relay-android` |
 | 上游基线 | `4ef8947e92f91a5b05c762752c04fecbc9d8a7e9` |
 | 默认分支 | `main` |
-| 当前阶段 | APK 自动发布链已合入；等待仓库首次启用 GitHub Actions，然后进入 Echo onboarding v1 |
-| 更新时间 | `2026-09-12T02:31:00+08:00` |
+| 当前阶段 | APK 自动发布链已合入；等待可用 Android 构建环境 / Actions 首次运行，然后进入 Echo onboarding v1 |
+| 更新时间 | `2026-09-12T02:40:00+08:00` |
 | Android 业务代码改动 | 尚无 Echo 业务改动 |
 | 真机构建与运行 | `[OBSERVED]` 用户已进入原版首次配置流程；新版自动发布链尚未实际运行 |
 
@@ -24,28 +24,19 @@ Echo 是一个 **本地优先的 Android 注意力防火墙**。目标不是制�
 
 ## 进行中的工作
 
-暂无代码工作。当前存在一个仓库级外部阻塞：Fork 后 GitHub Actions 尚未启用，API 查询 `actions/runs` 返回 0 条，因此自动构建/Release 未实际执行。
+暂无代码工作。当前存在两个环境级阻塞：
+
+1. Fork 后 GitHub Actions 尚未产生任何 run，自动构建/Release 未实际执行；
+2. 当前网页 GPT 执行环境有 JDK 21，但缺 Android SDK/Gradle，且不能联网补齐，因此不能在该云容器内诚实地产出新的 APK。
 
 ## 最近完成
 
 | work_id | 结果 | 提交 / PR | 验证 | `[UNRUN]` / 下一步 |
 | --- | --- | --- | --- | --- |
-| `release-pipeline-20260912-webgpt` | CI 增加 APK artifact、`workflow_dispatch` 与 `main` 自动 GitHub prerelease；测试包固定名 `Echo-preview.apk` | PR #4；merge `99dd15f` | workflow 文件已远端复核；PR 可合并并已合入 | Actions 实际 run / APK / Release `[UNRUN]`，因为 Fork 当前未触发任何 Actions；用户需首次启用 workflows 后手动 Run workflow |
+| `release-policy-20260912-user` | 用户明确：Echo 测试包发布不要求 SHA-256/哈希校验；以版本/commit/Release 追踪即可 | 用户产品决定；本次文档记录 | 无运行时影响 | 后续 Agent 不再把哈希生成或校验列为发布门槛 |
+| `release-pipeline-20260912-webgpt` | CI 增加 APK artifact、`workflow_dispatch` 与 `main` 自动 GitHub prerelease；测试包固定名 `Echo-preview.apk` | PR #4；merge `99dd15f` | workflow 文件已远端复核；PR 可合并并已合入 | Actions 实际 run / APK / Release `[UNRUN]` |
 | `baseline-ux-observation-20260912-user` | 用户确认 UI 观感差、白底白字/低对比度；原版 onboarding 强制第三方渠道 | 用户真机观察；PR #3 已合入 main | 源码复核与现象一致 | 下一步 Echo onboarding v1 |
 | `bootstrap-20260911-webgpt` | 建立 Echo 产品定位、唯一实时交接表和多 Agent 强制规则 | PR #1 已合入 main | 远端复核 | 后续逐项验证 |
-
-### `release-pipeline-20260912-webgpt` 交接详情
-
-```text
-changed: .github/workflows/android-ci.yml 增加 APK artifact、手动触发、main 自动 prerelease；未改 Android 业务代码
-commit: 93493fa + df05100 + 9a5987e；merge 99dd15f
-remote: PR #4 已 merge 到 main
-checks: workflow 内容与 PR 状态已远端复核；main merge 成功；actions/runs 查询为 0
- data_or_schema: 无
-unrun: GitHub Actions compile/test/assemble、artifact、Release、APK 安装全部 [UNRUN]，原因是 Fork workflows 尚未首次启用
-rollback: revert PR #4 / merge 99dd15f；不影响用户数据
-next: 用户在 GitHub Actions 页启用 workflows，选择 Android CI → Run workflow(main)；然后网页 GPT 检查 run、artifact 和 Release
-```
 
 ## 已冻结边界
 
@@ -53,7 +44,8 @@ next: 用户在 GitHub Actions 页启用 workflows，选择 Android CI → Run w
 - Echo 不要求用户必须拥有 Bark、飞书或钉钉；第三方转发渠道只是可选高级能力。
 - Echo 首次配置最小主路径：通知访问权限 → 选择需要观察/管理的 App → 进入主界面。
 - 白底白字/低对比度是阻塞可读性的 bug，优先修复。
-- 测试 APK 通过 GitHub Actions 构建；GitHub Release 必须标记 Preview/Prerelease，不视为正式稳定版本。
+- 测试 APK 通过可验证构建产出并发布到 GitHub Release；Release 必须标记 Preview/Prerelease，不视为正式稳定版本。
+- **Echo 测试包不要求 SHA-256/哈希校验，也不把哈希生成/核验作为发布门槛。** 版本、commit 与 GitHub Release 即为测试阶段的追踪依据。
 - 当前 Preview 使用 debug 构建；跨构建覆盖安装签名稳定性尚未保证，必要时可能需要卸载旧测试版后安装。
 - 用户真实通知正文、数据库、备份、Token、Webhook、验证码、电话号码等敏感数据不得进入源码仓库或 Release。
 - Room Entity 变化必须有 Migration；DataStore 新字段必须有默认值。
@@ -62,7 +54,7 @@ next: 用户在 GitHub Actions 页启用 workflows，选择 Android CI → Run w
 
 ## 下一条开发链
 
-1. 用户首次启用 GitHub Actions，并运行 `Android CI` 的 `main` workflow；确认产生 `Echo-preview.apk` 与 prerelease。
+1. 获得可用 Android 构建执行环境，或 GitHub Actions 首次成功运行；确认产生 `Echo-preview.apk` 与 prerelease。
 2. Echo onboarding v1：去除 Bark / 飞书 / 钉钉强制依赖，首次配置只保留“通知访问 → 选择来源 App → 进入主界面”。
 3. 同轮修复 onboarding 文字/背景对比度。
 4. 自动发布新 Preview APK，用户手机复测。
