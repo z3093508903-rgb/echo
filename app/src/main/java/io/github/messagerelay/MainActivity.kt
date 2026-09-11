@@ -15,6 +15,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
@@ -162,12 +163,30 @@ fun MessageRelayApp(openPermission: () -> Unit) {
         "dark" -> true
         else -> systemDark
     }
-    val scheme = if (dark) {
-        darkColorScheme(primary = Indigo, background = Color(0xFF101525), surface = Color(0xFF182033), onBackground = Color(0xFFE8ECF8))
-    } else {
-        lightColorScheme(primary = Indigo, background = LightUi.page, surface = LightUi.card, onBackground = LightUi.ink)
-    }
     val colors = if (dark) DarkUi else LightUi
+    val scheme = if (dark) {
+        darkColorScheme(
+            primary = Indigo,
+            onPrimary = Color.White,
+            background = colors.page,
+            onBackground = colors.ink,
+            surface = colors.card,
+            onSurface = colors.ink,
+            onSurfaceVariant = colors.muted,
+            outline = colors.border
+        )
+    } else {
+        lightColorScheme(
+            primary = Indigo,
+            onPrimary = Color.White,
+            background = colors.page,
+            onBackground = colors.ink,
+            surface = colors.card,
+            onSurface = colors.ink,
+            onSurfaceVariant = colors.muted,
+            outline = colors.border
+        )
+    }
     var tab by remember { mutableStateOf(MainTab.Home) }
     var subPage by remember { mutableStateOf<SubPage?>(null) }
     var editingApp by remember { mutableStateOf<Pair<String, String>?>(null) }
@@ -291,65 +310,57 @@ private fun Onboarding(openPermission: () -> Unit, repository: AppSettingsReposi
     var search by remember { mutableStateOf("") }
     var manualPackage by remember { mutableStateOf("") }
     var selectedSources by remember { mutableStateOf(emptyList<SourceSelection>()) }
-    var selectedChannel by remember { mutableStateOf("bark") }
-    var dingtalk by remember { mutableStateOf("") }
-    var dingSecret by remember { mutableStateOf("") }
-    var feishu by remember { mutableStateOf("") }
-    var feiSecret by remember { mutableStateOf("") }
-    var bark by remember { mutableStateOf("") }
-    var testPassed by remember { mutableStateOf(false) }
-    var status by remember { mutableStateOf("") }
 
-    PageScaffold("四步完成首次配置", "按顺序完成权限、来源、渠道和测试。", colors = colors) {
-        StatusBadge("第 ${step + 1} 步，共 4 步", Indigo, colors)
+    PageScaffold("欢迎来到回声 Echo", "只做两件事：开启通知访问，并选择需要回声帮你管理的 App。", colors = colors) {
+        StatusBadge("第 ${step + 1} 步，共 2 步", Indigo, colors)
         Spacer(Modifier.height(12.dp))
         when (step) {
-            0 -> SectionCard("开启通知访问", "只读取你选择来源 App 的通知，并在本机完成筛选后转发。", Icons.Outlined.Notifications, colors) {
+            0 -> SectionCard("开启通知访问", "回声只处理 Android 系统实际提供的通知；判断与记录默认都在本机完成。", Icons.Outlined.Notifications, colors) {
                 PrimaryAction("打开通知访问设置", colors, onClick = openPermission)
+                Spacer(Modifier.height(8.dp))
+                Text("开启后返回这里，点击“继续”。", color = colors.muted, lineHeight = 19.sp)
             }
-            1 -> SourceSelectionCard(apps, search, { search = it }, manualPackage, { manualPackage = it }, selectedSources, { selectedSources = it }, colors)
-            2 -> SectionCard("渠道参数", "Webhook 必须使用 HTTPS。", Icons.Outlined.Notifications, colors) {
-                ChannelChoice(selectedChannel, { selectedChannel = it }, colors)
-                SelectedChannelFields(selectedChannel, dingtalk, { dingtalk = it }, dingSecret, { dingSecret = it }, feishu, { feishu = it }, feiSecret, { feiSecret = it }, bark, { bark = it }, colors)
-            }
-            else -> SectionCard("发送测试消息", "至少一个渠道测试成功后才能完成配置。", Icons.Outlined.CheckCircle, colors) {
-                PrimaryAction("发送测试", colors) {
-                    scope.launch {
-                        val channels = selectedChannelConfig(selectedChannel, dingtalk, feishu, bark, dingSecret, feiSecret)
-                        SecureStore(context).put("channels", ChannelSender.serialize(channels))
-                        val results = withContext(Dispatchers.IO) { channels.map { ChannelSender.send(it, "消息接力测试", "渠道配置成功") } }
-                        testPassed = results.any(DeliveryResult::success)
-                        status = if (testPassed) "测试成功，可以完成配置" else results.firstOrNull()?.error ?: "请先配置渠道"
-                    }
-                }
-                if (status.isNotBlank()) {
-                    Spacer(Modifier.height(10.dp))
-                    StatusBadge(status, if (testPassed) Success else Danger, colors)
-                }
-            }
+            else -> SourceSelectionCard(
+                apps,
+                search,
+                { search = it },
+                manualPackage,
+                { manualPackage = it },
+                selectedSources,
+                { selectedSources = it },
+                colors
+            )
         }
         Spacer(Modifier.height(18.dp))
         Button(
             onClick = {
                 scope.launch {
-                    if (step == 1) {
+                    if (step == 0) {
+                        step = 1
+                    } else {
                         dao.saveRules(selectedSources.map {
                             RuleEntity(it.packageName, it.appName, defaultIncludesForTemplate(it.templateId), templateId = it.templateId)
                         })
+                        repository.setOnboardingComplete(true)
                     }
-                    if (step == 2) SecureStore(context).put("channels", ChannelSender.serialize(selectedChannelConfig(selectedChannel, dingtalk, feishu, bark, dingSecret, feiSecret)))
-                    if (step < 3) step++ else repository.setOnboardingComplete(true)
                 }
             },
-            enabled = when (step) {
-                1 -> selectedSources.isNotEmpty()
-                2 -> selectedChannelConfig(selectedChannel, dingtalk, feishu, bark, dingSecret, feiSecret).isNotEmpty()
-                3 -> testPassed
-                else -> true
-            },
+            enabled = step == 0 || selectedSources.isNotEmpty(),
             modifier = Modifier.fillMaxWidth(),
-            contentPadding = PaddingValues(vertical = 14.dp)
-        ) { Text(if (step == 3) "完成配置" else "继续", fontWeight = FontWeight.Bold) }
+            contentPadding = PaddingValues(vertical = 14.dp),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = Indigo,
+                contentColor = Color.White,
+                disabledContainerColor = Indigo.copy(alpha = 0.35f),
+                disabledContentColor = Color.White.copy(alpha = 0.72f)
+            )
+        ) {
+            Text(if (step == 1) "进入回声" else "继续", fontWeight = FontWeight.Bold)
+        }
+        if (step == 1 && selectedSources.isEmpty()) {
+            Spacer(Modifier.height(8.dp))
+            Text("至少选择一个来源 App 后即可进入。", color = colors.muted, lineHeight = 19.sp)
+        }
     }
 }
 
@@ -378,29 +389,39 @@ private fun Home(
     val rules by dao.rulesFlow().collectAsState(initial = emptyList())
     val channels = ChannelSelection.normalized(storedChannels(context))
     val primaryChannels = ChannelSelection.primaryEnabled(channels, settings.primaryChannelId)
-    val ready = primaryChannels.isNotEmpty() && rules.isNotEmpty() && settings.selectedTemplatePreset.isNotBlank()
+    val ready = rules.isNotEmpty()
 
-    PageScaffold("消息接力", "简单模式优先，按状态卡逐项修复。", modifier, colors) {
+    PageScaffold("回声 Echo", "重要信息及时到达，低价值提醒留给之后处理。", modifier, colors) {
         SectionCard("运行状态", null, Icons.Outlined.PlayCircle, colors) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Column(Modifier.weight(1f)) {
-                    Text(if (settings.paused) "转发应用通知已关闭" else "转发应用通知已开启", color = colors.ink, fontWeight = FontWeight.Bold, fontSize = 18.sp)
-                    Text("今日已接力 $count 条 · 待发送 $queued 条", color = colors.muted)
+                    Text(if (settings.paused) "通知处理已暂停" else "通知处理已开启", color = colors.ink, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                    Text("今日记录 $count 条 · 待处理 $queued 条", color = colors.muted)
                 }
                 Switch(!settings.paused, onCheckedChange = { scope.launch { repository.setPaused(!it) } })
             }
         }
         Spacer(Modifier.height(12.dp))
-        SectionCard(if (ready) "首次配置进度" else "需要修复配置", if (ready) "关键配置已完成。" else "按下面三项完成基础配置。", Icons.Outlined.CheckCircle, colors) {
-            SetupStep("1. 推送渠道", primaryChannels.isNotEmpty(), onOpenChannel, colors)
-            SetupStep("2. 软件选择", rules.isNotEmpty(), onOpenApps, colors)
-            SetupStep("3. 消息模板", settings.selectedTemplatePreset.isNotBlank(), onOpenTemplates, colors)
+        SectionCard(
+            if (ready) "基础配置已完成" else "需要选择来源应用",
+            if (ready) "来源 App 已配置；Bark、飞书、钉钉属于可选的外部转发能力。" else "至少选择一个希望回声管理的 App。",
+            Icons.Outlined.CheckCircle,
+            colors
+        ) {
+            SetupStep("来源应用", rules.isNotEmpty(), onOpenApps, colors)
             OutlinedButton(onClick = openPermission, modifier = Modifier.fillMaxWidth()) { Text("检查通知访问权限") }
         }
         Spacer(Modifier.height(12.dp))
-        FeatureCard("推送渠道", primaryChannels.firstOrNull()?.name ?: "待配置", Icons.Outlined.Notifications, Modifier.fillMaxWidth(), onOpenChannel, colors)
+        FeatureCard("来源应用", if (rules.isEmpty()) "待选择" else "已选择 ${rules.size} 个", Icons.Outlined.List, Modifier.fillMaxWidth(), onOpenApps, colors)
         Spacer(Modifier.height(10.dp))
-        FeatureCard("软件选择", if (rules.isEmpty()) "待选择" else "已选择 ${rules.size} 个", Icons.Outlined.List, Modifier.fillMaxWidth(), onOpenApps, colors)
+        FeatureCard(
+            "外部转发（可选）",
+            primaryChannels.firstOrNull()?.name ?: "未配置，不影响 Echo 核心流程",
+            Icons.Outlined.Notifications,
+            Modifier.fillMaxWidth(),
+            onOpenChannel,
+            colors
+        )
         Spacer(Modifier.height(10.dp))
         FeatureCard("消息模板", simpleTemplateName(settings.selectedTemplatePreset), Icons.Outlined.CheckCircle, Modifier.fillMaxWidth(), onOpenTemplates, colors)
         Spacer(Modifier.height(10.dp))
@@ -502,8 +523,8 @@ private fun SettingsHub(
                 }
             }
         }
-        SettingNavRow("推送渠道", "配置 Bark、飞书、钉钉，并选择主推送渠道。", Icons.Outlined.Notifications, onOpenChannel, colors)
-        SettingNavRow("软件选择", "选择短信、电话、微信或其他 App。", Icons.Outlined.List, onOpenApps, colors)
+        SettingNavRow("来源应用", "选择希望 Echo 观察和管理的 App。", Icons.Outlined.List, onOpenApps, colors)
+        SettingNavRow("外部转发（可选）", "需要时再配置 Bark、飞书或钉钉；不影响 Echo 核心使用。", Icons.Outlined.Notifications, onOpenChannel, colors)
         SettingNavRow("SIM 卡管理", "查看电话相关的 SIM 信息。", Icons.Outlined.Notifications, onOpenSimManagement, colors)
         SettingNavRow("消息模板", "选择简洁、标准、隐私或原始通知模板。", Icons.Outlined.CheckCircle, onOpenTemplates, colors)
         SettingNavRow("免打扰", if (settings.quietEnabled) "${settings.quietStart}-${settings.quietEnd}" else "未开启", Icons.Outlined.Schedule, onOpenQuiet, colors)
@@ -562,14 +583,14 @@ private fun PushChannelScreen(modifier: Modifier, settings: AppSettings, reposit
     @Suppress("UNUSED_VARIABLE")
     val currentRefresh = refreshKey
     val channels = ChannelSelection.normalized(storedChannels(context))
-    PageScaffold("推送渠道", "简单模式可以保存多个配置，但只选择一个主推送渠道。", modifier, colors) {
+    PageScaffold("外部转发", "可选高级能力：需要时再把消息转发到 Bark、飞书或钉钉。", modifier, colors) {
         if (unreadableChannels) {
             SectionCard("渠道配置读取失败", "系统无法解密已保存的渠道。请重新保存渠道，或导入之前导出的备份。", Icons.Outlined.Tune, colors) {
                 StatusBadge("需要重新保存渠道", Danger, colors)
             }
             Spacer(Modifier.height(12.dp))
         }
-        SectionCard("主推送渠道", "切换主渠道不会删除其他配置。", Icons.Outlined.Notifications, colors) {
+        SectionCard("主推送渠道", "不配置也可以使用 Echo 核心流程；切换主渠道不会删除其他配置。", Icons.Outlined.Notifications, colors) {
             channels.forEach { channel ->
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Column(Modifier.weight(1f)) {
@@ -582,7 +603,7 @@ private fun PushChannelScreen(modifier: Modifier, settings: AppSettings, reposit
                     RadioButton(selected = settings.primaryChannelId == channel.id, onClick = { scope.launch { repository.setPrimaryChannelId(channel.id) } })
                 }
             }
-            if (channels.isEmpty()) EmptyText("还没有保存渠道，请先添加一个。", colors)
+            if (channels.isEmpty()) EmptyText("未配置外部转发渠道。Echo 核心流程仍可继续使用。", colors)
         }
         Spacer(Modifier.height(12.dp))
         SectionCard("添加或更新渠道", "Bark 可填写声音和图标 URL；图标 URL 需要 http/https。", Icons.Outlined.CheckCircle, colors) {
@@ -654,7 +675,7 @@ private fun BarkBindingCard(
     var selected by remember(bark.id, bark.boundAppPackages) { mutableStateOf(bark.boundPackages()) }
     SectionCard("${bark.name} 绑定 App", "可选。绑定后这些 App 的 Bark 推送只发到这个 Bark。", Icons.Outlined.Notifications, colors) {
         if (rules.isEmpty()) {
-            EmptyText("请先在“软件选择”里添加要转发的 App。", colors)
+            EmptyText("请先在“来源应用”里添加要管理的 App。", colors)
         } else {
             rules.forEach { rule ->
                 val checked = rule.packageName in selected
@@ -694,7 +715,7 @@ private fun SimpleAppSelectionScreen(
     val rules by dao.rulesFlow().collectAsState(initial = emptyList())
     val installedApps = remember { loadInstalledApps(context) }
     var search by remember { mutableStateOf("") }
-    PageScaffold("软件选择", "推荐短信、电话、微信；其他 App 也可以手动选择。", modifier, colors) {
+    PageScaffold("来源应用", "选择希望 Echo 观察和管理的 App。", modifier, colors) {
         SectionCard("推荐应用", "能识别到才会显示，避免不同手机包名不一致。", Icons.Outlined.CheckCircle, colors) {
             recommendedApps(installedApps).forEach { (name, pkg) ->
                 SimpleAppRow(name, pkg, rules.firstOrNull { it.packageName == pkg }, settings.selectedTemplatePreset, colors, onOpenAppSettings) { rule ->
@@ -964,18 +985,18 @@ private fun Rules(modifier: Modifier, colors: UiColors) {
 private fun UserManualScreen(modifier: Modifier, colors: UiColors) {
     PageScaffold("使用教程", "小白步骤版说明书。", modifier, colors) {
         listOf(
-            "1. 快速开始" to "先配置推送渠道，再选择要转发的软件，最后选择模板并发送测试消息。",
-            "2. 配置推送渠道" to "Bark、飞书、钉钉任选一种。配置完成后建议先发测试消息。",
-            "3. 选择转发软件" to "推荐选择短信、电话、微信，也可以添加其他 App。",
-            "4. 选择消息模板" to "普通用户直接选择预设模板，高级用户再修改变量。",
+            "1. 快速开始" to "首次启动只需要开启通知访问，并选择希望 Echo 管理的来源 App。Bark、飞书、钉钉都不是必需项。",
+            "2. 外部转发（可选）" to "只有你确实需要把消息发送到其他设备或服务时，才配置 Bark、飞书或钉钉。",
+            "3. 选择来源应用" to "推荐选择微信、抖音、小红书等你真正需要管理反馈的 App，也可以添加其他 App。",
+            "4. 选择消息模板" to "模板属于显示与外部转发能力，可以以后再调整。",
             "5. 设置仅锁屏时推送" to "不想使用手机时被重复提醒，可给单个应用开启仅锁屏。",
             "6. 设置电话通知类型" to "电话可选择未接来电、来电提醒和来电已接通。",
             "7. 配置免打扰" to "支持跨午夜时段和重要关键词例外。",
             "8. 后台运行与权限" to "不同手机可能需要手动开启自启、锁后台、省电白名单。",
-            "9. 查看和处理转发记录" to "记录页分为全部、成功、失败和已过滤。",
-            "10. 备份与恢复" to "备份可能包含渠道 Token，请妥善保存。",
+            "9. 查看和处理记录" to "记录页分为全部、成功、失败和已过滤。后续 Echo 会继续增加通知观察能力。",
+            "10. 备份与恢复" to "如果配置了外部渠道，备份可能包含渠道 Token，请妥善保存。",
             "11. 高级设置说明" to "高级设置适合了解关键词、Webhook 和规则含义的用户。",
-            "12. 版本更新" to "消息接力可以通过 GitHub Releases 检查新版本。默认会自动检查，也可以在设置里的版本更新页面关闭，关闭后仍可手动检查。",
+            "12. 版本更新" to "Echo 可以通过 GitHub Releases 检查新版本。默认会自动检查，也可以在设置里的版本更新页面关闭，关闭后仍可手动检查。",
             "13. 常见问题" to "先看首页状态卡和记录详情，再按提示修复。"
         ).forEach { (title, text) -> ManualChapter(title, text, colors) }
     }
@@ -1176,7 +1197,7 @@ private fun SourceSelectionCard(
     onSelectedSources: (List<SourceSelection>) -> Unit,
     colors: UiColors
 ) {
-    SectionCard("选择来源应用（可多选）", "只转发被选中的 App。", Icons.Outlined.List, colors) {
+    SectionCard("选择来源应用（可多选）", "只处理被选中的 App 通知。", Icons.Outlined.List, colors) {
         StatusBadge("来源显示不全时，请允许设备应用列表 / 查询所有软件包", Warning, colors)
         Text("建议同时处理自启、锁后台、省电限制。不明白可以询问 AI。", color = colors.muted, lineHeight = 19.sp)
         OutlinedTextField(search, onSearch, label = { Text("搜索应用") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
@@ -1362,7 +1383,13 @@ private fun ManualChapter(title: String, text: String, colors: UiColors) {
 
 @Composable
 private fun PageScaffold(title: String, subtitle: String? = null, modifier: Modifier = Modifier, colors: UiColors, content: @Composable ColumnScope.() -> Unit) {
-    Column(modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(18.dp)) {
+    Column(
+        modifier
+            .fillMaxSize()
+            .background(colors.page)
+            .verticalScroll(rememberScrollState())
+            .padding(18.dp)
+    ) {
         Text(title, fontSize = 28.sp, fontWeight = FontWeight.Black, color = colors.ink)
         if (!subtitle.isNullOrBlank()) Text(subtitle, color = colors.muted, lineHeight = 19.sp)
         Spacer(Modifier.height(16.dp))
@@ -1457,7 +1484,17 @@ private fun StatusBadge(text: String, color: Color, colors: UiColors) {
 
 @Composable
 private fun PrimaryAction(text: String, colors: UiColors, enabled: Boolean = true, onClick: () -> Unit) {
-    Button(onClick = onClick, enabled = enabled, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = Indigo)) {
+    Button(
+        onClick = onClick,
+        enabled = enabled,
+        modifier = Modifier.fillMaxWidth(),
+        colors = ButtonDefaults.buttonColors(
+            containerColor = Indigo,
+            contentColor = Color.White,
+            disabledContainerColor = Indigo.copy(alpha = 0.35f),
+            disabledContentColor = Color.White.copy(alpha = 0.72f)
+        )
+    ) {
         Text(text, fontWeight = FontWeight.Bold)
     }
 }
