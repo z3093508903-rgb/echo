@@ -47,7 +47,7 @@ jobs:
           retention-days: 14
 
       - name: Publish GitHub prerelease
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
