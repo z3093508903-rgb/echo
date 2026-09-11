@@ -11,9 +11,9 @@
 | 上游 | `MSCNUAN/message-relay-android` |
 | 上游基线 | `4ef8947e92f91a5b05c762752c04fecbc9d8a7e9` |
 | 默认分支 | `main` |
-| 当前协作分支 | `gpt/project-bootstrap-20260911` |
+| main 立项基线 | `9411233acedb72e73892719d753066d8e74e269d`（PR #1） |
 | 当前阶段 | 正式立项完成，等待原版构建基线验证 |
-| 更新时间 | `2026-09-11T21:17:00+08:00` |
+| 更新时间 | `2026-09-11T21:46:00+08:00` |
 | Android 业务代码改动 | 无 |
 | 真机构建与运行 | `[UNRUN]` |
 
@@ -40,20 +40,20 @@ Echo 不是“把更多通知集中到另一个信息流”的工具，而是一
 
 ## 最近完成
 
-| work_id | 结果 | 提交 | 验证 | `[UNRUN]` / 下一步 |
+| work_id | 结果 | 提交 / PR | 验证 | `[UNRUN]` / 下一步 |
 | --- | --- | --- | --- | --- |
-| `bootstrap-20260911-webgpt` | 建立 Echo 产品定位、唯一实时交接表和多 Agent 强制规则；保留上游工程安全约束 | `7d2fd57`、`c637ec54` | 远端重新读取 `AGENTS.md` / `PROJECT_HANDOFF.md`；compare 显示仅 2 个文档文件变化，分支相对 `main` ahead 2 / behind 0 | Android 编译、单测、lint、APK、真机均 `[UNRUN]`；下一步先验证原版构建基线 |
+| `bootstrap-20260911-webgpt` | 建立 Echo 产品定位、唯一实时交接表和多 Agent 强制规则；保留上游工程安全约束；已合入 `main` | PR `#1`；merge `9411233` | 远端重新读取 `AGENTS.md` / `PROJECT_HANDOFF.md`；合并前 compare 仅 2 个 Markdown 文件变化 | Android 编译、单测、lint、APK、真机均 `[UNRUN]`；下一步先验证原版构建基线 |
 
 ### `bootstrap-20260911-webgpt` 交接详情
 
 ```text
 changed: 新增 PROJECT_HANDOFF.md；将 AGENTS.md 改为 Echo 多 Agent 协作与工程约束入口；未修改 Android 业务代码
-commit: 7d2fd57c445dfa80fff707352f42a42d67fa0ae5 + c637ec54f2704cbb9635369bf761f93e5bbdb669
-remote: gpt/project-bootstrap-20260911
-checks: 远端逐文件重新读取；GitHub compare(main...gpt/project-bootstrap-20260911) = ahead 2 / behind 0，仅 AGENTS.md 与 PROJECT_HANDOFF.md 变化
+commit: 7d2fd57c445dfa80fff707352f42a42d67fa0ae5 + c637ec54f2704cbb9635369bf761f93e5bbdb669 + 238fcba3706d5400734b75881e15c6bfbf7e0902
+remote: PR #1 已 merge 到 main，merge commit 9411233acedb72e73892719d753066d8e74e269d
+checks: 远端逐文件重新读取；合并前 GitHub compare 仅 AGENTS.md 与 PROJECT_HANDOFF.md 变化
 data_or_schema: 无
 unrun: Gradle compile/test/lint/assemble、APK 安装、通知权限、后台行为、微信/抖音/小红书真机通知全部 [UNRUN]
-rollback: 删除/放弃 gpt/project-bootstrap-20260911 即可回到上游基线 4ef8947；未触碰用户数据
+rollback: revert PR #1 / merge commit 9411233；未触碰用户数据
 next: 从 main 最新基线建立独立 feature 分支，验证上游原版可构建并记录真实结果
 ```
 
@@ -69,12 +69,11 @@ next: 从 main 最新基线建立独立 feature 分支，验证上游原版可�
 
 ## 下一条开发链
 
-1. 将协作基线合入 `main`。
-2. 在独立 feature 分支确认上游原版可构建，记录真实测试结果。
-3. 建立“通知观察模式”最小方案：仅采集并脱敏展示通知元数据，不先做复杂分类。
-4. 用真机观察微信 / 抖音 / 小红书实际产生的系统通知格式。
-5. 基于真实样本再冻结 P0/P1/P2/P3 规则与 Echo 第一版 UI。
-6. 以“主动打开平台检查反馈的次数是否下降”作为核心产品指标，而不是功能数量。
+1. 在独立 feature 分支确认上游原版可构建，记录真实测试结果。
+2. 建立“通知观察模式”最小方案：仅采集并脱敏展示通知元数据，不先做复杂分类。
+3. 用真机观察微信 / 抖音 / 小红书实际产生的系统通知格式。
+4. 基于真实样本再冻结 P0/P1/P2/P3 规则与 Echo 第一版 UI。
+5. 以“主动打开平台检查反馈的次数是否下降”作为核心产品指标，而不是功能数量。
 
 ## Agent 开工模板
 
