@@ -11,10 +11,10 @@
 | 上游 | `MSCNUAN/message-relay-android` |
 | 上游基线 | `4ef8947e92f91a5b05c762752c04fecbc9d8a7e9` |
 | 默认分支 | `main` |
-| 当前阶段 | APK 自动发布链已合入；等待可用 Android 构建环境 / Actions 首次运行，然后进入 Echo onboarding v1 |
-| 更新时间 | `2026-09-12T02:40:00+08:00` |
-| Android 业务代码改动 | 尚无 Echo 业务改动 |
-| 真机构建与运行 | `[OBSERVED]` 用户已进入原版首次配置流程；新版自动发布链尚未实际运行 |
+| 当前阶段 | Echo onboarding v1 开发中：移除第三方渠道强制依赖并修复 onboarding 对比度 |
+| 更新时间 | `2026-09-12T03:15:23+08:00` |
+| Android 业务代码改动 | 本轮将在 feature 分支首次修改 onboarding UI/流程 |
+| 真机构建与运行 | `[OBSERVED]` 用户已进入原版首次配置流程；新版尚未构建/真机验证 |
 
 ## 产品定位
 
@@ -24,18 +24,26 @@ Echo 是一个 **本地优先的 Android 注意力防火墙**。目标不是制�
 
 ## 进行中的工作
 
-暂无代码工作。当前存在两个环境级阻塞：
+```text
+work_id: onboarding-v1-20260912-webgpt
+agent: 网页 GPT
+branch@base: gpt/echo-onboarding-v1-20260912@aa485f7ba599b85c4446fbcd4902557fc1452af7
+goal: 将首次配置收敛为“通知访问 → 选择来源 App → 进入主界面”，移除 Bark/飞书/钉钉强制门槛，并修复 onboarding 白底白字/低对比度
+owns: PROJECT_HANDOFF.md; app/src/main/java/io/github/messagerelay/MainActivity.kt
+status: editing
+updated_at: 2026-09-12T03:15:23+08:00
+notes: main 当前无其他进行中的代码 work；不改 Room/DataStore schema；第三方渠道继续保留在设置中作为可选能力
+```
 
-1. Fork 后 GitHub Actions 尚未产生任何 run，自动构建/Release 未实际执行；
-2. 当前网页 GPT 执行环境有 JDK 21，但缺 Android SDK/Gradle，且不能联网补齐，因此不能在该云容器内诚实地产出新的 APK。
+环境级限制仍存在：Fork 的 GitHub Actions 尚未产生任何 run；当前网页 GPT 云执行环境缺 Android SDK/Gradle 且不能联网补齐，所以本轮编译/真机验证在可用构建环境出现前必须标 `[UNRUN]`。
 
 ## 最近完成
 
 | work_id | 结果 | 提交 / PR | 验证 | `[UNRUN]` / 下一步 |
 | --- | --- | --- | --- | --- |
-| `release-policy-20260912-user` | 用户明确：Echo 测试包发布不要求 SHA-256/哈希校验；以版本/commit/Release 追踪即可 | 用户产品决定；本次文档记录 | 无运行时影响 | 后续 Agent 不再把哈希生成或校验列为发布门槛 |
-| `release-pipeline-20260912-webgpt` | CI 增加 APK artifact、`workflow_dispatch` 与 `main` 自动 GitHub prerelease；测试包固定名 `Echo-preview.apk` | PR #4；merge `99dd15f` | workflow 文件已远端复核；PR 可合并并已合入 | Actions 实际 run / APK / Release `[UNRUN]` |
-| `baseline-ux-observation-20260912-user` | 用户确认 UI 观感差、白底白字/低对比度；原版 onboarding 强制第三方渠道 | 用户真机观察；PR #3 已合入 main | 源码复核与现象一致 | 下一步 Echo onboarding v1 |
+| `release-policy-20260912-user` | 用户明确：Echo 测试包发布不要求 SHA-256/哈希校验；以版本/commit/Release 追踪即可 | 用户产品决定；文档已记录 | 无运行时影响 | 后续 Agent 不再把哈希生成或校验列为发布门槛 |
+| `release-pipeline-20260912-webgpt` | CI 增加 APK artifact、`workflow_dispatch` 与 `main` 自动 GitHub prerelease；测试包固定名 `Echo-preview.apk` | PR #4；merge `99dd15f` | workflow 文件已远端复核 | Actions 实际 run / APK / Release `[UNRUN]` |
+| `baseline-ux-observation-20260912-user` | 用户确认 UI 观感差、白底白字/低对比度；原版 onboarding 强制第三方渠道 | 用户真机观察；PR #3 已合入 main | 源码复核与现象一致 | 当前 work 正在处理 |
 | `bootstrap-20260911-webgpt` | 建立 Echo 产品定位、唯一实时交接表和多 Agent 强制规则 | PR #1 已合入 main | 远端复核 | 后续逐项验证 |
 
 ## 已冻结边界
@@ -54,10 +62,10 @@ Echo 是一个 **本地优先的 Android 注意力防火墙**。目标不是制�
 
 ## 下一条开发链
 
-1. 获得可用 Android 构建执行环境，或 GitHub Actions 首次成功运行；确认产生 `Echo-preview.apk` 与 prerelease。
-2. Echo onboarding v1：去除 Bark / 飞书 / 钉钉强制依赖，首次配置只保留“通知访问 → 选择来源 App → 进入主界面”。
-3. 同轮修复 onboarding 文字/背景对比度。
-4. 自动发布新 Preview APK，用户手机复测。
+1. 完成 Echo onboarding v1：去除 Bark / 飞书 / 钉钉强制依赖，首次配置只保留“通知访问 → 选择来源 App → 进入主界面”。
+2. 同轮修复 onboarding 文字/背景对比度，并确保主界面不再把“推送渠道”列为核心配置缺失。
+3. 在可用 Android 构建环境或 GitHub Actions 中执行 compile/test/lint/assemble，发布 Preview APK。
+4. 用户手机复测：无需渠道即可进入主界面，且深浅色均可读。
 5. 建立通知观察模式并观察微信 / 抖音 / 小红书实际系统通知格式。
 6. 基于真实样本冻结 P0/P1/P2/P3 与 Echo 第一版 UI。
 7. 核心指标仍是主动打开平台检查反馈的次数是否下降。
