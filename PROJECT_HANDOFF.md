@@ -12,7 +12,7 @@
 | 上游基线 | `4ef8947e92f91a5b05c762752c04fecbc9d8a7e9` |
 | 默认分支 | `main` |
 | 当前协作分支 | `gpt/project-bootstrap-20260911` |
-| 当前阶段 | 正式立项 / 多 Agent 协作基线 |
+| 当前阶段 | 正式立项完成，等待原版构建基线验证 |
 | 更新时间 | `2026-09-11T21:17:00+08:00` |
 | Android 业务代码改动 | 无 |
 | 真机构建与运行 | `[UNRUN]` |
@@ -34,22 +34,28 @@ Echo 不是“把更多通知集中到另一个信息流”的工具，而是一
 
 ## 进行中的工作
 
-```text
-work_id: bootstrap-20260911-webgpt
-agent: 网页 GPT
-branch@base: gpt/project-bootstrap-20260911@4ef8947e92f91a5b05c762752c04fecbc9d8a7e9
-goal: 建立 Echo 的项目定位与多 Agent 交接制度，不修改 Android 业务代码
-owns: AGENTS.md; PROJECT_HANDOFF.md
-status: claimed
-updated_at: 2026-09-11T21:17:00+08:00
-notes: main 与上游基线一致；当前仅 main 一条原始分支，无已知文件冲突
-```
+暂无。
 
 > 若这里存在 `claimed / editing / verifying` 工作，新 Agent 必须先检查自己的修改范围是否重叠。只读审查不取得文件所有权，但不得覆盖另一 Agent 正在写的文件。
 
 ## 最近完成
 
-暂无。项目刚正式立项。
+| work_id | 结果 | 提交 | 验证 | `[UNRUN]` / 下一步 |
+| --- | --- | --- | --- | --- |
+| `bootstrap-20260911-webgpt` | 建立 Echo 产品定位、唯一实时交接表和多 Agent 强制规则；保留上游工程安全约束 | `7d2fd57`、`c637ec54` | 远端重新读取 `AGENTS.md` / `PROJECT_HANDOFF.md`；compare 显示仅 2 个文档文件变化，分支相对 `main` ahead 2 / behind 0 | Android 编译、单测、lint、APK、真机均 `[UNRUN]`；下一步先验证原版构建基线 |
+
+### `bootstrap-20260911-webgpt` 交接详情
+
+```text
+changed: 新增 PROJECT_HANDOFF.md；将 AGENTS.md 改为 Echo 多 Agent 协作与工程约束入口；未修改 Android 业务代码
+commit: 7d2fd57c445dfa80fff707352f42a42d67fa0ae5 + c637ec54f2704cbb9635369bf761f93e5bbdb669
+remote: gpt/project-bootstrap-20260911
+checks: 远端逐文件重新读取；GitHub compare(main...gpt/project-bootstrap-20260911) = ahead 2 / behind 0，仅 AGENTS.md 与 PROJECT_HANDOFF.md 变化
+data_or_schema: 无
+unrun: Gradle compile/test/lint/assemble、APK 安装、通知权限、后台行为、微信/抖音/小红书真机通知全部 [UNRUN]
+rollback: 删除/放弃 gpt/project-bootstrap-20260911 即可回到上游基线 4ef8947；未触碰用户数据
+next: 从 main 最新基线建立独立 feature 分支，验证上游原版可构建并记录真实结果
+```
 
 ## 已冻结边界
 
@@ -63,7 +69,7 @@ notes: main 与上游基线一致；当前仅 main 一条原始分支，无已�
 
 ## 下一条开发链
 
-1. 完成协作基线并合入 `main`。
+1. 将协作基线合入 `main`。
 2. 在独立 feature 分支确认上游原版可构建，记录真实测试结果。
 3. 建立“通知观察模式”最小方案：仅采集并脱敏展示通知元数据，不先做复杂分类。
 4. 用真机观察微信 / 抖音 / 小红书实际产生的系统通知格式。
