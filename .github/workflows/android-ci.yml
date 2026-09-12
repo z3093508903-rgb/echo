@@ -33,16 +33,85 @@ jobs:
       - name: Unit tests
         run: ./gradlew :app:testDebugUnitTest --no-daemon --console=plain
 
-      - name: Assemble debug APK
+      - name: Assemble debug APK for PR / non-main runs
+        if: github.event_name == 'pull_request' || github.ref != 'refs/heads/main'
         run: ./gradlew :app:assembleDebug --no-daemon --console=plain
 
-      - name: Prepare preview APK
-        run: cp app/build/outputs/apk/debug/app-debug.apk Echo-preview.apk
+      - name: Prepare debug CI artifact
+        if: github.event_name == 'pull_request' || github.ref != 'refs/heads/main'
+        run: cp app/build/outputs/apk/debug/app-debug.apk Echo-debug.apk
 
-      - name: Upload CI artifact
+      - name: Upload debug CI artifact
+        if: github.event_name == 'pull_request' || github.ref != 'refs/heads/main'
         uses: actions/upload-artifact@v4
         with:
-          name: Echo-preview-${{ github.run_number }}
+          name: Echo-debug-${{ github.run_number }}
+          path: Echo-debug.apk
+          retention-days: 14
+
+      - name: Verify release signing secrets
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        env:
+          MESSAGE_RELAY_KEYSTORE_BASE64: ${{ secrets.MESSAGE_RELAY_KEYSTORE_BASE64 }}
+          MESSAGE_RELAY_KEYSTORE_PASSWORD: ${{ secrets.MESSAGE_RELAY_KEYSTORE_PASSWORD }}
+          MESSAGE_RELAY_KEY_ALIAS: ${{ secrets.MESSAGE_RELAY_KEY_ALIAS }}
+          MESSAGE_RELAY_KEY_PASSWORD: ${{ secrets.MESSAGE_RELAY_KEY_PASSWORD }}
+        shell: bash
+        run: |
+          missing=0
+          for name in \
+            MESSAGE_RELAY_KEYSTORE_BASE64 \
+            MESSAGE_RELAY_KEYSTORE_PASSWORD \
+            MESSAGE_RELAY_KEY_ALIAS \
+            MESSAGE_RELAY_KEY_PASSWORD
+          do
+            if [ -z "${!name}" ]; then
+              echo "::error::Required GitHub Actions secret is missing: ${name}"
+              missing=1
+            fi
+          done
+          if [ "$missing" -ne 0 ]; then
+            echo "Refusing to build or publish an unsigned main Preview."
+            exit 1
+          fi
+
+      - name: Restore fixed release keystore
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        env:
+          MESSAGE_RELAY_KEYSTORE_BASE64: ${{ secrets.MESSAGE_RELAY_KEYSTORE_BASE64 }}
+        shell: bash
+        run: |
+          KEYSTORE_PATH="${RUNNER_TEMP}/echo-release.keystore"
+          printf '%s' "$MESSAGE_RELAY_KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE_PATH"
+          chmod 600 "$KEYSTORE_PATH"
+          echo "MESSAGE_RELAY_KEYSTORE_PATH=$KEYSTORE_PATH" >> "$GITHUB_ENV"
+
+      - name: Configure signed Preview version
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        shell: bash
+        run: |
+          VERSION_CODE=$((3120000 + GITHUB_RUN_NUMBER))
+          echo "MESSAGE_RELAY_VERSION_CODE=$VERSION_CODE" >> "$GITHUB_ENV"
+          echo "MESSAGE_RELAY_VERSION_NAME=3.12" >> "$GITHUB_ENV"
+          echo "Echo Preview versionName=3.12 versionCode=$VERSION_CODE"
+
+      - name: Assemble signed release APK
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        env:
+          MESSAGE_RELAY_KEYSTORE_PASSWORD: ${{ secrets.MESSAGE_RELAY_KEYSTORE_PASSWORD }}
+          MESSAGE_RELAY_KEY_ALIAS: ${{ secrets.MESSAGE_RELAY_KEY_ALIAS }}
+          MESSAGE_RELAY_KEY_PASSWORD: ${{ secrets.MESSAGE_RELAY_KEY_PASSWORD }}
+        run: ./gradlew :app:assembleRelease --no-daemon --console=plain
+
+      - name: Prepare signed Preview APK
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        run: cp app/build/outputs/apk/release/app-release.apk Echo-preview.apk
+
+      - name: Upload signed Preview artifact
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: Echo-preview-${{ github.run_number }}-release
           path: Echo-preview.apk
           retention-days: 14
 
@@ -50,11 +119,14 @@ jobs:
         if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
         env:
           GH_TOKEN: ${{ github.token }}
+        shell: bash
         run: |
           TAG="preview-${GITHUB_RUN_NUMBER}"
           gh release create "$TAG" Echo-preview.apk \
             --repo "$GITHUB_REPOSITORY" \
-            --title "Echo Preview #${GITHUB_RUN_NUMBER}" \
-            --notes "自动构建的 Echo Android 测试包。仅用于真机反馈，不代表稳定版本。Commit: ${GITHUB_SHA}" \
+            --title "Echo 3.12 Preview #${GITHUB_RUN_NUMBER}" \
+            --notes "固定 Release 签名自动构建的 Echo Android 测试包。versionName=3.12，versionCode=${MESSAGE_RELAY_VERSION_CODE}，Commit: ${GITHUB_SHA}。
+
+重要迁移提示：如果你安装过 Preview #1/#4/#8 等旧随机 Debug 签名版本，需要先完整卸载旧版，再安装本次固定签名版本；Android 不允许不同签名直接覆盖安装，卸载会清除 App 本地数据。完成这一次迁移后，后续使用同一固定签名且 versionCode 更高的 Preview 可直接覆盖升级。" \
             --prerelease \
             --target "$GITHUB_SHA"
