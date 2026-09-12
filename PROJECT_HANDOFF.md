@@ -10,8 +10,8 @@
 | 仓库 | `z3093508903-rgb/echo` |
 | 默认分支 | `main` |
 | 当前阶段 | Echo onboarding v1 已真机通过；进入 PC-first 最小闭环：Echo 本机通知 → Windows Phone Link |
-| 更新时间 | `2026-09-12T15:30:00+08:00` |
-| Android 业务代码改动 | 新 work 已登记，尚未开始业务代码修改 |
+| 更新时间 | `2026-09-12T15:33:00+08:00` |
+| Android 业务代码改动 | 新 work 已登记，准备实现本机通知 fallback |
 | 真机构建与运行 | Preview #4 已由用户安装并确认可正常进入；Windows Phone Link 已成功连接并保持代理开启可用 |
 
 ## 产品定位
@@ -32,11 +32,11 @@ Echo 是一个 **本地优先的 Android 注意力防火墙**。当前进一步�
 work_id: pc-relay-v1-20260912-webgpt
 agent: 网页 GPT
 branch@base: gpt/echo-pc-relay-v1-20260912@main
-goal: 当来源通知命中 Echo 现有规则且没有外部 Bark/飞书/钉钉渠道时，生成一条 Echo 自身 Android 通知，供 Windows Phone Link 只同步 Echo；同时保证 Android 13+ 会请求 Echo 通知权限
-owns: PROJECT_HANDOFF.md; app/src/main/java/io/github/messagerelay/RelayEngine.kt; app/src/main/java/io/github/messagerelay/RelayNotificationService.kt; app/src/main/java/io/github/messagerelay/EchoNotificationPublisher.kt; app/src/main/java/io/github/messagerelay/MainActivity.kt; app/src/main/AndroidManifest.xml
-status: claimed
-updated_at: 2026-09-12T15:30:00+08:00
-notes: 不改 Room/DataStore schema；不做 P0/P1/P2/P3 智能分类；不取消来源 App 原通知；不宣称 Windows 已收到，只能确认 Echo 本机通知已生成。外部渠道已配置时继续走原有外部发送逻辑，避免重复提醒。
+goal: 当来源通知命中 Echo 现有规则且没有外部 Bark/飞书/钉钉渠道时，生成一条 Echo 自身 Android 通知，供 Windows Phone Link 只同步 Echo；Android 13+ 首次启动时请求 Echo 通知权限
+owns: PROJECT_HANDOFF.md; app/src/main/java/io/github/messagerelay/RelayEngine.kt; app/src/main/java/io/github/messagerelay/RelayNotificationService.kt; app/src/main/java/io/github/messagerelay/EchoNotificationPublisher.kt; app/src/main/java/io/github/messagerelay/EchoLauncherActivity.kt; app/src/main/AndroidManifest.xml
+status: editing
+updated_at: 2026-09-12T15:33:00+08:00
+notes: 不改 Room/DataStore schema；不做 P0/P1/P2/P3 智能分类；不取消来源 App 原通知；不宣称 Windows 已收到，只能确认 Echo 本机通知已生成。外部渠道已配置时继续走原有外部发送逻辑，避免重复提醒。新增 EchoLauncherActivity 仅作为 Android 13+ POST_NOTIFICATIONS 系统权限门，授权/拒绝后立即进入现有 MainActivity，不承载业务状态，避免为一处权限请求重写大型 MainActivity。
 ```
 
 ## 本轮设计边界
@@ -44,7 +44,7 @@ notes: 不改 Room/DataStore schema；不做 P0/P1/P2/P3 智能分类；不取�
 - **无外部渠道时**：Echo 本机通知成为默认输出，不再把“未配置渠道”视为发送失败。
 - **有外部渠道时**：保持现有 Bark / 飞书 / 钉钉行为，本轮不叠加 Echo 本机通知，避免双重提醒。
 - Echo 本机通知的点击入口只打开 Echo，不跳回原社交 App，避免形成新的“顺手刷一下”入口。
-- Android 13+ 若未授予 `POST_NOTIFICATIONS`，必须请求系统通知权限；未授权时记录明确失败原因，不伪装成功。
+- Android 13+ 若未授予 `POST_NOTIFICATIONS`，启动门请求系统通知权限；若用户拒绝，后续本机通知必须记录明确失败原因，不伪装成功。
 - 记录层只能写“Echo 本机通知已生成”，不能写“电脑已收到”，因为应用无法观测 Phone Link 最终同步结果。
 - Phone Link 端由用户设置为只同步 Echo；微信/抖音/小红书原通知是否在 PC 显示由 Windows Phone Link 控制，不在本轮 Android 代码中强制取消来源通知。
 - 不上传真实通知正文、Token、数据库或日志到 GitHub。
@@ -70,7 +70,7 @@ notes: 不改 Room/DataStore schema；不做 P0/P1/P2/P3 智能分类；不取�
 
 ## 下一条开发链
 
-1. 实现 `EchoNotificationPublisher` 与无渠道 fallback，并补 Android 13+ 通知权限请求。
+1. 实现 `EchoNotificationPublisher`、Android 13+ 权限门与无渠道 fallback。
 2. GitHub Actions 执行 `compileDebugKotlin`、`testDebugUnitTest`、`assembleDebug`；`lintDebug` 若 workflow 未覆盖继续标 `[UNRUN]`。
 3. CI 通过后合入 main，自动发布新 Preview APK。
 4. 用户手机安装后，在 Phone Link 中关闭微信/抖音/小红书 PC 通知，仅保留 Echo。
