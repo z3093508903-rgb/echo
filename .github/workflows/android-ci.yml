@@ -53,25 +53,35 @@ jobs:
           path: Echo-debug.apk
           retention-days: 14
 
-      - name: Restore cached Preview test signing key
+      - name: Restore cached Preview v2 test signing key
         if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
         uses: actions/cache@v4
         with:
-          path: ~/.echo-preview-signing/echo-preview-test.jks
-          key: echo-preview-test-signing-v1
+          path: ~/.echo-preview-signing-v2
+          key: echo-preview-test-signing-v2
 
-      - name: Prepare Preview test signing key
+      - name: Prepare Preview v2 test signing key
         if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
         shell: bash
         run: |
-          SIGNING_DIR="$HOME/.echo-preview-signing"
-          KEYSTORE_PATH="$SIGNING_DIR/echo-preview-test.jks"
-          KEY_ALIAS="echo-preview-test"
-          SIGNING_PASSWORD="$(printf '%s' "${GITHUB_REPOSITORY}-echo-preview-test-v1" | sha256sum | cut -c1-24)"
+          set -euo pipefail
+
+          SIGNING_DIR="$HOME/.echo-preview-signing-v2"
+          KEYSTORE_PATH="$SIGNING_DIR/echo-preview-test-v2.jks"
+          PASSWORD_PATH="$SIGNING_DIR/.password"
+          KEY_ALIAS="echo-preview-test-v2"
 
           mkdir -p "$SIGNING_DIR"
-          if [ ! -s "$KEYSTORE_PATH" ]; then
-            echo "::notice::Creating a new test-only Preview signing key for this repository."
+
+          if [ ! -s "$KEYSTORE_PATH" ] || [ ! -s "$PASSWORD_PATH" ]; then
+            echo "::notice::Creating a new rotated test-only Preview signing key (v2)."
+            rm -f "$KEYSTORE_PATH" "$PASSWORD_PATH"
+
+            SIGNING_PASSWORD="$(openssl rand -hex 24)"
+            echo "::add-mask::$SIGNING_PASSWORD"
+            printf '%s' "$SIGNING_PASSWORD" > "$PASSWORD_PATH"
+            chmod 600 "$PASSWORD_PATH"
+
             keytool -genkeypair -noprompt \
               -keystore "$KEYSTORE_PATH" \
               -storetype PKCS12 \
@@ -81,19 +91,17 @@ jobs:
               -keyalg RSA \
               -keysize 3072 \
               -validity 36500 \
-              -dname "CN=Echo Preview Test,O=Echo,C=XX"
+              -dname "CN=Echo Preview Test v2,O=Echo,C=XX"
             chmod 600 "$KEYSTORE_PATH"
+          else
+            SIGNING_PASSWORD="$(cat "$PASSWORD_PATH")"
+            echo "::add-mask::$SIGNING_PASSWORD"
           fi
 
           keytool -list \
             -keystore "$KEYSTORE_PATH" \
             -storepass "$SIGNING_PASSWORD" \
             -alias "$KEY_ALIAS" >/dev/null
-
-          echo "MESSAGE_RELAY_KEYSTORE_PATH=$KEYSTORE_PATH" >> "$GITHUB_ENV"
-          echo "MESSAGE_RELAY_KEYSTORE_PASSWORD=$SIGNING_PASSWORD" >> "$GITHUB_ENV"
-          echo "MESSAGE_RELAY_KEY_ALIAS=$KEY_ALIAS" >> "$GITHUB_ENV"
-          echo "MESSAGE_RELAY_KEY_PASSWORD=$SIGNING_PASSWORD" >> "$GITHUB_ENV"
 
       - name: Configure signed Preview version
         if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
@@ -106,7 +114,23 @@ jobs:
 
       - name: Assemble signed release APK
         if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
-        run: ./gradlew :app:assembleRelease --no-daemon --console=plain
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          SIGNING_DIR="$HOME/.echo-preview-signing-v2"
+          KEYSTORE_PATH="$SIGNING_DIR/echo-preview-test-v2.jks"
+          PASSWORD_PATH="$SIGNING_DIR/.password"
+          KEY_ALIAS="echo-preview-test-v2"
+          SIGNING_PASSWORD="$(cat "$PASSWORD_PATH")"
+
+          echo "::add-mask::$SIGNING_PASSWORD"
+          export MESSAGE_RELAY_KEYSTORE_PATH="$KEYSTORE_PATH"
+          export MESSAGE_RELAY_KEYSTORE_PASSWORD="$SIGNING_PASSWORD"
+          export MESSAGE_RELAY_KEY_ALIAS="$KEY_ALIAS"
+          export MESSAGE_RELAY_KEY_PASSWORD="$SIGNING_PASSWORD"
+
+          ./gradlew :app:assembleRelease --no-daemon --console=plain
 
       - name: Prepare signed Preview APK
         if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
@@ -127,7 +151,7 @@ jobs:
         shell: bash
         run: |
           TAG="preview-${GITHUB_RUN_NUMBER}"
-          NOTES=$'测试专用固定签名构建的 Echo Android Preview。versionName=3.12，versionCode='"${MESSAGE_RELAY_VERSION_CODE}"$'，Commit: '"${GITHUB_SHA}"$'。\n\n迁移提示：如果你安装过 Preview #1/#4/#8 等旧随机 Debug 签名版本，需要先完整卸载旧版，再安装本次 Preview。之后只要 GitHub Actions 的测试签名缓存仍在，同一签名 + 更高 versionCode 的 Preview 可以直接覆盖升级。该方案仅用于当前单人测试，不作为正式生产签名方案。'
+          NOTES=$'测试专用 v2 轮换签名构建的 Echo Android Preview。versionName=3.12，versionCode='"${MESSAGE_RELAY_VERSION_CODE}"$'，Commit: '"${GITHUB_SHA}"$'。\n\n安全迁移提示：Preview #16/#18 使用的 v1 测试签名密码曾出现在公开 Actions 日志，因此 v1 已废弃。首次从 #18 迁移到本 v2 Preview 时需要完整卸载旧版一次；这是主动安全轮换，不是覆盖升级 bug。安装首个 v2 Preview 后，后续 v2 Preview 仍应可直接覆盖升级。该方案仅用于当前单人测试，不作为正式生产签名方案。'
           gh release create "$TAG" Echo-preview.apk \
             --repo "$GITHUB_REPOSITORY" \
             --title "Echo 3.12 Preview #${GITHUB_RUN_NUMBER}" \
