@@ -1,6 +1,7 @@
 package io.github.messagerelay
 
 import android.Manifest
+import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
@@ -40,16 +41,56 @@ class RelayNotificationService : NotificationListenerService() {
 
     override fun onNotificationPosted(sbn: StatusBarNotification) {
         if (sbn.packageName == packageName) return
-        val content = if (sbn.packageName == "com.tencent.mm") {
-            WeChatNotificationParser.parse(sbn)
-        } else {
-            NotificationContentExtractor.extract(sbn)
+
+        scope.launch {
+            val dao = RelayDatabase.get(applicationContext).relayDao()
+            val rule = dao.rule(sbn.packageName) ?: return@launch
+            val settings = AppSettingsRepository(applicationContext).current()
+
+            val content = if (sbn.packageName == "com.tencent.mm") {
+                WeChatNotificationParser.parse(sbn)
+            } else {
+                NotificationContentExtractor.extract(sbn)
+            }
+            val hasReadableContent = content.title.isNotBlank() || content.body.isNotBlank()
+            val ongoing = sbn.notification.flags and Notification.FLAG_ONGOING_EVENT != 0
+            val canPostEchoNotification =
+                Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+                    ContextCompat.checkSelfPermission(
+                        applicationContext,
+                        Manifest.permission.POST_NOTIFICATIONS
+                    ) == PackageManager.PERMISSION_GRANTED
+
+            if (
+                NotificationTakeoverPolicy.shouldCancelSource(
+                    hasEnabledRule = true,
+                    paused = settings.paused,
+                    canPostEchoNotification = canPostEchoNotification,
+                    hasReadableContent = hasReadableContent,
+                    ongoing = ongoing
+                )
+            ) {
+                runCatching { cancelNotification(sbn.key) }
+            }
+
+            if (!hasReadableContent) return@launch
+            if (settings.paused) return@launch
+
+            val app = runCatching {
+                packageManager.getApplicationLabel(
+                    packageManager.getApplicationInfo(sbn.packageName, 0)
+                ).toString()
+            }.getOrDefault(sbn.packageName)
+            if (SmsDuplicateGuard.shouldSuppressNotification(sbn.packageName, content.title, content.body, sbn.postTime)) return@launch
+            val relayApp = if (sbn.packageName == "com.tencent.mm" && content.title.startsWith("微信 · ")) content.title else app
+
+            RelayEngine.processSelected(
+                applicationContext,
+                RelayMessage(sbn.packageName, relayApp, content.title, content.body, sbn.postTime),
+                rule,
+                settings
+            )
         }
-        if (content.title.isBlank() && content.body.isBlank()) return
-        val app = runCatching { packageManager.getApplicationLabel(packageManager.getApplicationInfo(sbn.packageName, 0)).toString() }.getOrDefault(sbn.packageName)
-        if (SmsDuplicateGuard.shouldSuppressNotification(sbn.packageName, content.title, content.body, sbn.postTime)) return
-        val relayApp = if (sbn.packageName == "com.tencent.mm" && content.title.startsWith("微信 · ")) content.title else app
-        scope.launch { RelayEngine.process(applicationContext, RelayMessage(sbn.packageName, relayApp, content.title, content.body, sbn.postTime)) }
     }
 
     override fun onDestroy() {
