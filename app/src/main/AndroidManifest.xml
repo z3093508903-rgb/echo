@@ -8,14 +8,15 @@
     <uses-permission android:name="android.permission.READ_CONTACTS"/>
     <uses-permission android:name="android.permission.RECEIVE_SMS"/>
     <uses-feature android:name="android.hardware.telephony" android:required="false"/>
-    <application android:theme="@style/Theme.MessageRelay" android:label="消息接力" android:icon="@mipmap/ic_launcher" android:roundIcon="@mipmap/ic_launcher_round" android:allowBackup="false">
-        <activity android:name=".MainActivity" android:exported="true">
+    <application android:theme="@style/Theme.MessageRelay" android:label="回声 Echo" android:icon="@mipmap/ic_launcher" android:roundIcon="@mipmap/ic_launcher_round" android:allowBackup="false">
+        <activity android:name=".EchoLauncherActivity" android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
         </activity>
-        <service android:name=".RelayNotificationService" android:label="消息接力通知监听" android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE" android:exported="true">
+        <activity android:name=".MainActivity" android:exported="true"/>
+        <service android:name=".RelayNotificationService" android:label="Echo 通知监听" android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE" android:exported="true">
             <intent-filter><action android:name="android.service.notification.NotificationListenerService"/></intent-filter>
         </service>
         <receiver android:name=".RelayWidget" android:exported="true">
