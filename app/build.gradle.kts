@@ -1,3 +1,4 @@
+import org.gradle.api.GradleException
 import org.gradle.api.tasks.testing.Test
 import org.gradle.jvm.tasks.Jar
 
@@ -12,7 +13,18 @@ val releaseKeystorePath = providers.environmentVariable("MESSAGE_RELAY_KEYSTORE_
 val releaseKeystorePassword = providers.environmentVariable("MESSAGE_RELAY_KEYSTORE_PASSWORD").orNull
 val releaseKeyAlias = providers.environmentVariable("MESSAGE_RELAY_KEY_ALIAS").orNull
 val releaseKeyPassword = providers.environmentVariable("MESSAGE_RELAY_KEY_PASSWORD").orNull
-val hasReleaseSigning = listOf(releaseKeystorePath, releaseKeystorePassword, releaseKeyAlias, releaseKeyPassword).all { !it.isNullOrBlank() }
+val hasReleaseSigning = listOf(releaseKeystorePath, releaseKeystorePassword, releaseKeyAlias, releaseKeyPassword)
+    .all { !it.isNullOrBlank() }
+
+val buildVersionCode = providers.environmentVariable("MESSAGE_RELAY_VERSION_CODE").orNull
+    ?.let { raw ->
+        raw.toIntOrNull()?.takeIf { it > 0 }
+            ?: throw GradleException("MESSAGE_RELAY_VERSION_CODE must be a positive Int")
+    }
+    ?: 3_120_000
+val buildVersionName = providers.environmentVariable("MESSAGE_RELAY_VERSION_NAME").orNull
+    ?.takeIf(String::isNotBlank)
+    ?: "3.12"
 
 android {
     namespace = "io.github.messagerelay"
@@ -21,16 +33,30 @@ android {
         applicationId = "io.github.messagerelay"
         minSdk = 26
         targetSdk = 36
-        versionCode = 4
-        versionName = "0.1.3"
+        versionCode = buildVersionCode
+        versionName = buildVersionName
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     buildFeatures {
         compose = true
         buildConfig = true
     }
-    if (hasReleaseSigning) signingConfigs { create("release") { storeFile = file(releaseKeystorePath!!); storePassword = releaseKeystorePassword; keyAlias = releaseKeyAlias; keyPassword = releaseKeyPassword } }
-    buildTypes { release { isMinifyEnabled = false; if (hasReleaseSigning) signingConfig = signingConfigs.getByName("release") } }
+    if (hasReleaseSigning) {
+        signingConfigs {
+            create("release") {
+                storeFile = file(releaseKeystorePath!!)
+                storePassword = releaseKeystorePassword
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword
+            }
+        }
+    }
+    buildTypes {
+        release {
+            isMinifyEnabled = false
+            if (hasReleaseSigning) signingConfig = signingConfigs.getByName("release")
+        }
+    }
 }
 
 dependencies {
