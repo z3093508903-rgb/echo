@@ -9,72 +9,65 @@
 | 项目 | 回声 Echo |
 | 仓库 | `z3093508903-rgb/echo` |
 | 默认分支 | `main` |
-| main HEAD | `2fa6be55d286089a1d6acf60357aa213ecccabb8` |
-| 当前阶段 | Preview 发布链切换为测试专用固定签名 + Release APK |
-| 更新时间 | `2026-09-12T23:08:00+08:00` |
-| Android 业务代码改动 | 本 work 不改通知业务逻辑，只改构建/发布配置与版本信息 |
-| 真机构建与运行 | Preview #8 仍是旧随机 Debug 签名；首个测试固定签名 Preview 尚未发布 |
+| main HEAD | `98e07522b4e89cd59f8eaffdf0258933799b7d09` |
+| 当前阶段 | Preview 测试固定签名 + Release APK 发布链已上线，等待真机一次卸载迁移与后续覆盖升级验证 |
+| 更新时间 | `2026-09-12T23:19:00+08:00` |
+| Android 业务代码改动 | 本 work 未改通知业务逻辑，仅改构建/发布配置与版本信息 |
+| 真机构建与运行 | Echo 3.12 Preview #16 已发布；旧 Preview #8 → #16 仍需用户完整卸载一次 |
+
+## 产品定位
+
+Echo 是一个 **本地优先的 Android 注意力防火墙**。当前阶段只有单人真机测试，因此发布链优先低维护成本：PR 保持 Debug CI，main Preview 使用 Actions Cache 维护的测试专用签名并发布 Release APK。
 
 ## 进行中的工作
 
-```text
-work_id: fixed-release-signing-v3.12-20260912-webgpt
-agent: 网页 GPT
-branch@base: gpt/fixed-release-signing-v3.12-20260912@2fa6be55d286089a1d6acf60357aa213ecccabb8
-goal: PR 保持 Debug CI；main Preview 使用测试专用固定签名 assembleRelease；versionCode 每次发布单调递增；versionName=3.12
-owns: PROJECT_HANDOFF.md; .github/workflows/android-ci.yml; app/build.gradle.kts; docs/RELEASE_SIGNING.md
-status: verifying
-updated_at: 2026-09-12T23:08:00+08:00
-notes: 用户明确当前仅单人测试，不希望维护 keystore/密码/Secrets。方案已从 Repository Secrets 收缩为 GitHub Actions Cache 保存测试签名 keystore：首次 main 自动生成，后续 main 复用同一 cache key。PR 仍只构建 Debug artifact；main 执行 assembleRelease。该方案不是正式生产签名体系；若 cache 将来丢失，可能再次需要完整卸载迁移。
-```
+当前无代码 work 占用。下一步是真机验证 Preview #16 的一次性迁移与后续覆盖升级。
 
-## 本轮发布约束
+## 当前发布链
 
 - PR / 非 main：`compileDebugKotlin` → `testDebugUnitTest` → `assembleDebug` → Debug artifact；不发布 GitHub Release。
-- main：恢复 `echo-preview-test-signing-v1` Actions cache；若首次没有 keystore，则在 Runner 内自动生成测试签名。
-- main 使用现有 `MESSAGE_RELAY_KEYSTORE_PATH` / `PASSWORD` / `ALIAS` / `KEY_PASSWORD` 环境变量注入 Gradle，执行 `assembleRelease`。
-- keystore 不提交 Git、不进入 APK artifact 之外的任何发布物，也不要求用户配置 Secrets。
+- main：恢复 `echo-preview-test-signing-v1` Actions cache；首次 cache miss 时 Runner 自动生成测试 keystore。
+- main 使用 `assembleRelease` 产出 `Echo-preview.apk`。
+- keystore 不提交 Git，也不进入 Preview Release；测试者无需手动配置 keystore、密码或 Repository Secrets。
 - `versionName = 3.12`。
-- `versionCode = 3_120_000 + GITHUB_RUN_NUMBER`，发布单调递增。
-- 旧 Preview #1/#4/#8 随机 Debug 签名用户，第一次迁移仍需完整卸载一次。
-- Actions Cache 不是正式密钥保管；cache 丢失可能导致测试签名轮换。正式公开稳定发行前必须迁移到长期 Release keystore + Secrets。
-- 不改 Room/DataStore schema。
+- `versionCode = 3_120_000 + GITHUB_RUN_NUMBER`；Preview #16 为 `3120016`。
+- 测试签名依赖 GitHub Actions Cache，不视为正式生产签名体系；若 cache 将来被清除，可能再次需要一次完整卸载迁移。
 
 ## 最近完成
 
 | work_id | 结果 | 提交 / PR | 验证 | `[UNRUN]` / 下一步 |
 | --- | --- | --- | --- | --- |
-| `fixed-release-signing-v3.12-20260912-webgpt` | PR Debug / main Release 拆分；3.12；单调 versionCode；测试签名改为 Actions cache 自动维护 | PR #9；workflow simplification `ce40adb9a0798ea7ea6915fcf1464e296b6e25dc` | 旧 secret 方案 PR CI run #12 已通过 compile/unit/assembleDebug；简化后的最新 head 等待 CI | main `assembleRelease`、首次 cache 签名生成、Preview 发布、覆盖升级仍待验证 |
-| `pc-relay-v1-20260912-webgpt` | Echo 本机通知 fallback + Android 13+ 通知权限门 + Phone Link 最小出口 | PR #8；merge `2fa6be55d286089a1d6acf60357aa213ecccabb8`；Preview #8 | PR CI + main CI ✅ | Echo→Phone Link→Windows 最终真机链仍由用户验证 |
+| `fixed-release-signing-v3.12-20260912-webgpt` | PR Debug / main Release 拆分；3.12；单调 versionCode；Actions Cache 自动维护测试签名；无需用户配置 Secrets | PR #9；merge `98e07522b4e89cd59f8eaffdf0258933799b7d09`；Preview #16 | PR workflow commit CI run #13：compile/unit/assembleDebug ✅；main CI run #16：compile/unit ✅、测试签名恢复/生成 ✅、`assembleRelease` ✅、signed Preview artifact ✅、GitHub prerelease ✅ | 旧 Debug → Preview #16 一次卸载迁移 `[UNRUN]`；Preview #16 → 下一更高 versionCode 覆盖升级 `[UNRUN]` |
+| `pc-relay-v1-20260912-webgpt` | Echo 本机通知 fallback + Android 13+ 通知权限门 + Phone Link 最小出口 | PR #8；merge `2fa6be55d286089a1d6acf60357aa213ecccabb8`；Preview #8 | PR CI + main CI ✅ | Echo→Phone Link→Windows 最终真机链仍待用户验证 |
 
 ## 已冻结边界
 
-- 当前阶段只有单人测试，优先低维护成本；测试签名不等同正式生产签名。
-- Preview Release 必须来自 `assembleRelease`，PR Debug artifact 不作为可持续安装包。
-- 首次从历史随机 Debug 签名迁移必须完整卸载一次。
+- 当前单人 Preview 测试阶段允许使用 cache-backed 测试签名；它不是正式生产身份。
+- Preview Release 必须来自 `assembleRelease`；PR Debug artifact 不作为持续安装包。
+- 历史 Preview #1/#4/#8 使用随机 Debug 签名，迁移到 Preview #16 必须完整卸载一次。
+- 后续若 cache 签名保持不变且 versionCode 更高，应可直接覆盖；必须由真机验证后才能宣称闭环完成。
 - Echo 不要求 Bark、飞书或钉钉；第三方转发只是可选能力。
 - **PC-first**：现阶段优先复用 Windows Phone Link。
 - Room Entity 变化必须有 Migration；DataStore 新字段必须有默认值。
 
 ## 下一条开发链
 
-1. 等待 PR #9 最新 head 的 Debug CI 通过。
-2. 合并 PR #9 到 main。
-3. main Actions 首次生成/缓存测试签名，执行 `assembleRelease` 并发布 Echo 3.12 Preview。
-4. 用户完整卸载 Preview #8 一次，安装首个测试固定签名 Preview。
-5. 再发布一个更高 versionCode 的 Preview，真机确认可以直接覆盖升级。
-6. 覆盖升级闭环成立后，回到 Echo → Phone Link → Windows 通知链验证。
+1. 用户卸载当前旧随机 Debug 签名 Echo（如需保留配置先自行备份）。
+2. 安装 `Echo 3.12 Preview #16`。
+3. 验证 Echo 本机通知 → Windows Phone Link → Windows。
+4. 下一次代码迭代发布更高 versionCode Preview 后，直接覆盖安装 #16；若成功，则关闭 `INSTALL_FAILED_UPDATE_INCOMPATIBLE` 发布链问题。
 
 ## 完成 / 交接
 
 ```text
-changed: workflow 拆分 PR Debug 与 main Release；main 测试签名由 Actions Cache 自动维护；Gradle 支持 MESSAGE_RELAY_VERSION_CODE/NAME；versionName=3.12；versionCode=3_120_000+run_number；更新测试签名文档
-remote: gpt/fixed-release-signing-v3.12-20260912 / PR #9
-checks: 旧方案 PR CI run #12 PASS；最新 cache-signing head CI 待跑
+changed: PR Debug/main Release 拆分；Actions Cache 测试签名；assembleRelease Preview；versionName 3.12；versionCode 3_120_000+run_number
+commit: merge 98e07522b4e89cd59f8eaffdf0258933799b7d09
+remote: PR #9 merged
+checks: PR CI run #13 PASS；main CI run #16 PASS；Echo 3.12 Preview #16 published
 data_or_schema: 无 Room/DataStore schema 变化
-unrun: main assembleRelease；首次 test keystore cache；Release publish；旧 Debug→测试签名一次卸载；下一测试签名 Preview 覆盖升级
-rollback: 回退 PR #9 即恢复旧 Debug Preview 发布链（不建议）
-next: 最新 PR CI 通过后 merge，验证 main Release
+unrun: 旧 Debug→#16 真机卸载迁移；#16→下一 Preview 覆盖升级；Echo→Phone Link→Windows 业务链
+rollback: 回退 PR #9 可恢复旧 Debug 发布链，但会重新引入随机签名问题，不建议
+next: 用户安装 Preview #16 并继续真机测试
 ```
 
 ## 协作规则摘要
