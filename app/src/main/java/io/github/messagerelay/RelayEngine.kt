@@ -19,13 +19,37 @@ object RelayEngine {
     suspend fun process(context: Context, message: RelayMessage) {
         val dao = RelayDatabase.get(context).relayDao()
         val rule = dao.rule(message.packageName) ?: return
-        val relayRule = RelayRule(setOf(rule.packageName), rule.includes.lines().filter(String::isNotBlank), rule.excludes.lines().filter(String::isNotBlank))
+        val settings = AppSettingsRepository(context).current()
+        processSelected(context, message, dao, rule, settings)
+    }
+
+    suspend fun processSelected(
+        context: Context,
+        message: RelayMessage,
+        rule: RuleEntity,
+        settings: AppSettings
+    ) {
+        val dao = RelayDatabase.get(context).relayDao()
+        processSelected(context, message, dao, rule, settings)
+    }
+
+    private suspend fun processSelected(
+        context: Context,
+        message: RelayMessage,
+        dao: RelayDao,
+        rule: RuleEntity,
+        settings: AppSettings
+    ) {
+        val relayRule = RelayRule(
+            setOf(rule.packageName),
+            rule.includes.lines().filter(String::isNotBlank),
+            rule.excludes.lines().filter(String::isNotBlank)
+        )
         if (!relayRule.matches(message)) {
             addFilteredRecord(context, dao, message, "规则未命中或命中排除关键词")
             return
         }
         if (!dedupe.accept(message, System.currentTimeMillis())) return
-        val settings = AppSettingsRepository(context).current()
         if (settings.paused) return
         when (val screenDecision = ScreenOffOnlyPolicy.decide(rule.screenOffOnly, AndroidLockStateProvider(context))) {
             is ScreenOffOnlyDecision.Allow -> Unit
@@ -41,6 +65,9 @@ object RelayEngine {
             scheduleQueueFlush(context, settings)
             return
         }
+
+        if (tryImmediateLocalDelivery(context, dao, message, settings)) return
+
         val timingDelay = settings.deliveryDelaySeconds.toLong().coerceAtLeast(0) * 1000
         val mergeDelay = if (settings.mergeNotifications) settings.mergeWindowSeconds.toLong().coerceAtLeast(1) * 1000 else 0
         enqueue(
@@ -50,6 +77,74 @@ object RelayEngine {
             delayMillis = maxOf(timingDelay, mergeDelay),
             uniqueName = if (settings.mergeNotifications) "merge-${message.packageName}" else null
         )
+    }
+
+    private suspend fun tryImmediateLocalDelivery(
+        context: Context,
+        dao: RelayDao,
+        message: RelayMessage,
+        settings: AppSettings
+    ): Boolean {
+        val hasExternalChannels = SecureStore(context).get("channels")
+            ?.let { encoded ->
+                runCatching { ChannelSender.parse(encoded).isNotEmpty() }.getOrDefault(false)
+            }
+            ?: false
+
+        if (
+            !NotificationTakeoverPolicy.shouldUseImmediateLocalDelivery(
+                deliveryDelaySeconds = settings.deliveryDelaySeconds,
+                mergeNotifications = settings.mergeNotifications,
+                hasExternalChannels = hasExternalChannels
+            )
+        ) {
+            return false
+        }
+
+        publishLocalAndRecord(
+            context = context,
+            dao = dao,
+            message = message,
+            settings = settings,
+            delayed = false
+        )
+        return true
+    }
+
+    internal suspend fun publishLocalAndRecord(
+        context: Context,
+        dao: RelayDao,
+        message: RelayMessage,
+        settings: AppSettings,
+        delayed: Boolean
+    ): Boolean {
+        val publish = EchoNotificationPublisher.publish(context, message)
+        val resultJson = JSONArray()
+            .put(
+                JSONObject()
+                    .put("channel", "echo_local")
+                    .put("success", publish.success)
+                    .put("error", publish.error)
+            )
+            .toString()
+        dao.addRecord(
+            DeliveryRecord(
+                packageName = message.packageName,
+                app = message.app,
+                title = message.title,
+                body = if (RecordRetentionPolicy.shouldKeepBody(settings.historyRetention)) message.body else "",
+                status = if (publish.success) "成功" else "发送失败",
+                channelResults = resultJson,
+                createdAt = System.currentTimeMillis(),
+                delayed = delayed
+            )
+        )
+        RecordRetentionPolicy.cutoffMillis(settings.historyRetention, System.currentTimeMillis())?.let {
+            dao.deleteRecordsOlderThan(it)
+        }
+        dao.trimRecords()
+        RelayWidget.refresh(context)
+        return publish.success
     }
 
     suspend fun processCallEvent(context: Context, decision: CallStateDecision) {
@@ -175,31 +270,14 @@ class RelayWorker(context: Context, params: WorkerParameters) : CoroutineWorker(
         }
 
         if (channels.isEmpty()) {
-            val publish = EchoNotificationPublisher.publish(applicationContext, message)
-            val resultJson = JSONArray()
-                .put(
-                    JSONObject()
-                        .put("channel", "echo_local")
-                        .put("success", publish.success)
-                        .put("error", publish.error)
-                )
-                .toString()
-            dao.addRecord(
-                DeliveryRecord(
-                    packageName = message.packageName,
-                    app = message.app,
-                    title = message.title,
-                    body = if (RecordRetentionPolicy.shouldKeepBody(settings.historyRetention)) message.body else "",
-                    status = if (publish.success) "成功" else "发送失败",
-                    channelResults = resultJson,
-                    createdAt = System.currentTimeMillis(),
-                    delayed = inputData.getBoolean("delayed", false)
-                )
+            val success = RelayEngine.publishLocalAndRecord(
+                context = applicationContext,
+                dao = dao,
+                message = message,
+                settings = settings,
+                delayed = inputData.getBoolean("delayed", false)
             )
-            RecordRetentionPolicy.cutoffMillis(settings.historyRetention, System.currentTimeMillis())?.let { dao.deleteRecordsOlderThan(it) }
-            dao.trimRecords()
-            RelayWidget.refresh(applicationContext)
-            return if (publish.success) Result.success() else Result.failure()
+            return if (success) Result.success() else Result.failure()
         }
 
         val template = (dao.template(requestedTemplate)?.definition() ?: TemplateCatalog.byId(TemplateCatalog.STANDARD_ID)).template()
