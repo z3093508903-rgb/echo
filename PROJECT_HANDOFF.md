@@ -9,19 +9,36 @@
 | 项目 | 回声 Echo |
 | 仓库 | `z3093508903-rgb/echo` |
 | 默认分支 | `main` |
-| main HEAD | `007eeba03c816fa64338844e40f1b4294d932b09` |
-| 当前阶段 | v1 日志泄露已修复并轮换到 v2 测试签名；Preview #20 已发布，下一步是真机迁移后验证 Echo → Phone Link → Windows |
-| 更新时间 | `2026-09-12T23:50:00+08:00` |
-| Android 业务代码改动 | 本轮未改通知业务逻辑，只改测试签名发布链与交接状态 |
-| 真机构建与运行 | #16 → #18 未卸载覆盖成功；#18 `MainActivity` `Status: ok`；Preview #20 为首个 v2 签名包，尚未真机安装 |
+| main HEAD | `bea65d0989042619d2c749978c3918572c0d5b18` |
+| 当前阶段 | 真机反馈确认：当前实现仍是“监听后转发”，原通知未被 Echo 接管；下一步实现来源通知取消 + 无延迟本机 fast path |
+| 更新时间 | `2026-09-13T00:58:00+08:00` |
+| Android 业务代码改动 | 本轮正在修改通知接管与本机即时重发路径；不改 Room/DataStore schema |
+| 真机构建与运行 | #16 → #18 覆盖链已通过；当前用户反馈：Echo 有延时、原 App 弹窗未被拦截、关闭源 App 通知后 Echo 无法捕获、Phone Link 未收到 Echo 通知 |
 
 ## 产品定位
 
-Echo 是一个 **本地优先的 Android 注意力防火墙**。当前阶段只有单人真机测试，因此发布链优先低维护成本：PR 保持 Debug CI，main Preview 使用 Actions Cache 维护的测试专用签名并发布 Release APK。
+Echo 是一个 **本地优先的 Android 注意力防火墙**。当前阶段优先证明：来源 App 保持系统通知权限作为“数据源”，但原通知由 Echo 接管；只有 Echo 判断允许的消息才重新显示。PC-first 仍保留，但 Phone Link 暂不作为本轮 blocker。
 
 ## 进行中的工作
 
-当前无代码 work 占用。下一步由真机验证接手：从 #18 一次性迁移到 v2 Preview，然后测试权限、后台通知和 `Echo → Phone Link → Windows`。
+### `notification-takeover-fastpath-20260913-webgpt`
+
+- agent: Web GPT
+- branch: `gpt/notification-takeover-fastpath-20260913` @ `bea65d0989042619d2c749978c3918572c0d5b18`
+- goal: 对已选择的来源 App 真正接管系统通知；尽快取消原通知；当无延迟、无合并、无外部渠道时绕过 WorkManager，直接发布 Echo 本机通知，降低可感知延时
+- owns:
+  - `PROJECT_HANDOFF.md`
+  - `app/src/main/java/io/github/messagerelay/RelayNotificationService.kt`
+  - `app/src/main/java/io/github/messagerelay/RelayEngine.kt`
+  - `app/src/main/java/io/github/messagerelay/NotificationTakeoverPolicy.kt`（如需新增）
+  - `app/src/test/java/io/github/messagerelay/NotificationTakeoverPolicyTest.kt`（如需新增）
+- status: `in_progress`
+- updated_at: `2026-09-13T00:58:00+08:00`
+- constraints:
+  - 只接管已启用的来源 App；Echo 自己的通知永不递归处理
+  - 用户把来源 App 的系统通知总开关关闭后，Android 不产生可监听通知，此边界无法由 Echo 绕过
+  - 本轮不新增 Windows 协议、不依赖 Phone Link 成功
+  - 不修改 Room Entity / DataStore schema
 
 ## 当前发布链
 
@@ -29,53 +46,50 @@ Echo 是一个 **本地优先的 Android 注意力防火墙**。当前阶段只�
 - main：恢复 `echo-preview-test-signing-v2` cache；cache miss 时生成新的 v2 测试 key/cert 与随机密码；执行 `assembleRelease` → GitHub prerelease。
 - v2 随机密码不写入 `GITHUB_ENV`；只在签名 step 内读取并 `add-mask` 后临时 export。
 - `versionName = 3.12`。
-- `versionCode = 3_120_000 + GITHUB_RUN_NUMBER`；Preview #20 为 `3120020`。
+- `versionCode = 3_120_000 + GITHUB_RUN_NUMBER`。
 - 测试签名仍只是单人测试便利方案，不是正式生产密钥管理。
 
 ## 最近完成
 
 | work_id | 结果 | 提交 / PR | 验证 | `[UNRUN]` / 下一步 |
 | --- | --- | --- | --- | --- |
-| `signing-log-hardening-20260912-webgpt` | 废弃已暴露 v1 测试签名身份；新建 v2 cache + 新 key/cert + 随机密码；签名密码不再进入跨 step 环境；公开日志不再显示密码值 | PR #11；merge `007eeba03c816fa64338844e40f1b4294d932b09`；Preview #20 | PR CI #19：compile/unit/assembleDebug ✅；main CI #20：compile/unit ✅、v2 cache miss 后生成 key ✅、`assembleRelease` ✅、artifact ✅、prerelease ✅、v2 cache saved ✅；#20 完整公开 job log 已检查，未再出现 `MESSAGE_RELAY_KEYSTORE_PASSWORD` / `MESSAGE_RELAY_KEY_PASSWORD` 的实际值 | #18 → #20 因主动安全轮换需完整卸载一次 `[UNRUN]`；#20 → 后续 v2 Preview 覆盖升级 `[UNRUN]` |
-| `fixed-release-signing-v3.12-20260912-webgpt` | 固定测试签名覆盖升级机制已真机闭环 | PR #9；Preview #16/#18 | #16 安装成功；未卸载 #16 直接覆盖 #18 返回 `Success`；#16/#18 证书一致；覆盖前后数据目录标识一致；#18 `MainActivity` `Status: ok` | v1 已因日志泄露被安全废弃 |
-| `pc-relay-v1-20260912-webgpt` | Echo 本机通知 fallback + Android 13+ 通知权限门 + Phone Link 最小出口 | PR #8；merge `2fa6be55d286089a1d6acf60357aa213ecccabb8` | PR CI + main CI ✅ | 权限实际授权、页面视觉、后台通知、Echo→Phone Link→Windows 端到端仍 `[UNRUN]` |
+| `signing-log-hardening-20260912-webgpt` | 废弃已暴露 v1 测试签名身份；新建 v2 cache + 新 key/cert + 随机密码；签名密码不再进入跨 step 环境 | PR #11；main 后续 Preview #20/#22 使用 v2 | PR CI、main Release CI ✅；#22 命中 v2 signing cache | v2→v2 下一次覆盖升级可随功能包顺手验证 |
+| `fixed-release-signing-v3.12-20260912-webgpt` | 固定测试签名覆盖升级机制已真机闭环 | PR #9；Preview #16/#18 | #16 安装成功；未卸载 #16 直接覆盖 #18 返回 `Success`；证书一致；数据目录未重建；#18 启动正常 | v1 已因日志泄露被安全废弃 |
+| `pc-relay-v1-20260912-webgpt` | Echo 本机通知 fallback + Android 13+ 通知权限门 + Phone Link 最小出口 | PR #8；merge `2fa6be55d286089a1d6acf60357aa213ecccabb8` | PR CI + main CI ✅ | 真机反馈：存在延时；原通知未拦截；Phone Link 未收到，因此进入 takeover/fast-path 修复 |
 
-## 安全事件 / 发布链注意事项
+## 真机反馈：2026-09-13
 
-- #16 Actions：`https://github.com/z3093508903-rgb/echo/actions/runs/34701623661`
-- #18 Actions：`https://github.com/z3093508903-rgb/echo/actions/runs/34701899520`
-- 上述两个 v1 公开日志出现过未遮蔽的签名密码环境变量，且 v1 密码可由公开仓库名确定性派生，因此 v1 测试签名身份已废弃。
-- #20 Actions：`https://github.com/z3093508903-rgb/echo/actions/runs/34703130469`
-- #20 使用全新 v2 测试 key/cert 和随机密码；公开 job log 已人工检查：脚本源码会显示变量名和 `openssl rand` / `cat` 命令，但不会显示随机密码实际值；后续 env block 也不再携带两个密码变量。
-- v2 keystore 与其随机密码文件仍一起放在 Actions Cache 中，只用于当前单人测试便利；正式公开发行前必须迁移到长期 Release keystore + 正式 Secrets/受控密钥存储。
+- Echo 能监听来源通知，但存在可感知延时。
+- 原 App 的系统横幅/弹窗仍正常出现，说明 Echo 当前没有调用取消原通知的能力。
+- 若在 ColorOS 中直接关闭来源 App 的通知显示/总通知能力，Echo 也捕获不到该通知；因此正确配置应是**保留来源通知总开关，仅关闭横幅/声音/震动/锁屏展示**。
+- Windows Phone Link 当前没有收到 Echo 重发通知；本轮不把 Phone Link 当作核心 blocker，先完成 Android 端真正接管。
 
 ## 已冻结边界
 
 - #16 → #18 覆盖升级问题已真机关闭，不再把 `INSTALL_FAILED_UPDATE_INCOMPATIBLE` 作为当前 blocker。
-- v1 → v2 因安全轮换需要一次卸载，不能归类为覆盖升级失败。
-- v2 后续应保持相同证书并通过更高 versionCode 直接覆盖，但必须再经一次真机覆盖验证后才能宣称 v2 闭环。
 - Echo 不要求 Bark、飞书或钉钉；第三方转发只是可选能力。
-- **PC-first**：现阶段优先复用 Windows Phone Link。
+- **PC-first** 方向保留，但 Android 端“接管 → 分类 → 重发”必须先独立成立。
+- 来源 App 的系统通知总开关不能关闭，否则 `NotificationListenerService` 没有事件可消费。
 - Room Entity 变化必须有 Migration；DataStore 新字段必须有默认值。
 
 ## 下一条开发链
 
-1. 用户完整卸载当前 Preview #18 一次，并安装首个 v2 包 `Echo 3.12 Preview #20 (3120020)`。
-2. 安装后直接开始验证：通知权限实际授权、Echo 本机通知、后台通知，以及 `Echo → Phone Link → Windows`。
-3. 下一次任意功能迭代产生更高 versionCode 的 v2 Preview 时，直接覆盖 #20；成功后关闭 v2 覆盖验证项。
-4. 页面视觉问题继续记录，但不阻塞上述功能链测试。
+1. `notification-takeover-fastpath-20260913-webgpt`：只对已启用来源 App 取消原通知，并建立本机即时重发 fast path。
+2. PR CI 通过后合并，main 自动发布新的 v2 Preview。
+3. 真机验证：来源 App 通知总开关保持开启、横幅/声音关闭；检查原通知是否被快速清除、Echo 是否立即重发、后台是否稳定。
+4. Android 接管成立后，再单独判断 Phone Link 是否值得继续；若仍不可靠，再讨论局域网 Echo Bridge，而不是现在并行增加新实体。
 
 ## 完成 / 交接
 
 ```text
-changed: 修复公开 Actions 签名密码泄露；废弃 v1；引入 v2 cache-backed 随机密码测试签名；#20 已成功构建并发布
-commit: merge 007eeba03c816fa64338844e40f1b4294d932b09
-remote: PR #11 merged
-checks: PR CI #19 PASS；main CI #20 PASS；assembleRelease PASS；Preview #20 published；v2 cache saved；#20 public log inspected and no actual signing password value exposed
-data_or_schema: 无 Room/DataStore schema 变化
-unrun: #18→#20 一次卸载迁移；#20 真机启动/权限/页面视觉/后台通知；#20→后续 v2 直接覆盖；Echo→Phone Link→Windows
-rollback: 不恢复 v1 已暴露签名；若 v2 workflow 故障仅回退实现方式，并继续使用新的未暴露签名身份
-next: 用户卸载 #18 一次、安装 Preview #20，然后立即测试 Echo→Phone Link→Windows
+changed: [IN PROGRESS] 通知接管 + 本机 fast path
+commit: [IN PROGRESS]
+remote: gpt/notification-takeover-fastpath-20260913
+checks: [UNRUN] compileDebugKotlin / testDebugUnitTest / assembleDebug / real device
+data_or_schema: 计划无 Room/DataStore schema 变化
+unrun: 当前全部待实现与验证
+rollback: 回退本 feature PR 即可恢复现有“监听后 WorkManager 转发”逻辑
+next: 完成实现后跑 PR CI，再交付真机测试
 ```
 
 ## 协作规则摘要
