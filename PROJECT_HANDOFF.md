@@ -9,11 +9,11 @@
 | 项目 | 回声 Echo |
 | 仓库 | `z3093508903-rgb/echo` |
 | 默认分支 | `main` |
-| main HEAD | `98e07522b4e89cd59f8eaffdf0258933799b7d09` |
-| 当前阶段 | Preview 测试固定签名 + Release APK 发布链已上线，等待真机一次卸载迁移与后续覆盖升级验证 |
-| 更新时间 | `2026-09-12T23:19:00+08:00` |
-| Android 业务代码改动 | 本 work 未改通知业务逻辑，仅改构建/发布配置与版本信息 |
-| 真机构建与运行 | Echo 3.12 Preview #16 已发布；旧 Preview #8 → #16 仍需用户完整卸载一次 |
+| main HEAD | `21a5ea918014915725325127ec1ed5916ff2bb2b` |
+| 当前阶段 | #16 → #18 固定测试签名覆盖升级已真机闭环；正在修复公开 Actions 日志中的签名密码泄露 |
+| 更新时间 | `2026-09-12T23:30:00+08:00` |
+| Android 业务代码改动 | 本 work 不改通知业务逻辑，仅处理测试签名发布链日志与缓存迁移 |
+| 真机构建与运行 | Preview #16 → #18 未卸载直接覆盖成功；#18 `MainActivity` 启动 `Status: ok`，当前前台 |
 
 ## 产品定位
 
@@ -21,53 +21,67 @@ Echo 是一个 **本地优先的 Android 注意力防火墙**。当前阶段只�
 
 ## 进行中的工作
 
-当前无代码 work 占用。下一步是真机验证 Preview #16 的一次性迁移与后续覆盖升级。
+```text
+work_id: signing-log-hardening-20260912-webgpt
+agent: 网页 GPT
+branch@base: gpt/signing-log-hardening-20260912@main
+ goal: 修复 #16/#18 Actions 公开日志暴露 keystore/key 密码；在不更换签名证书的前提下把 v1 测试 keystore 迁移到随机密码 + v2 cache，并停止把密码写入跨 step GITHUB_ENV
+owns: PROJECT_HANDOFF.md; .github/workflows/android-ci.yml
+status: implementing
+updated_at: 2026-09-12T23:30:00+08:00
+notes: #16→#18 覆盖升级已真机通过。用户发现公开 Actions 日志会显示 MESSAGE_RELAY_KEYSTORE_PASSWORD / KEY_PASSWORD，且旧密码由公开仓库名确定性派生。目标是保留同一 key/cert，重新封装 keystore 到随机密码并缓存为 v2；敏感变量仅在 assembleRelease step 内临时 export，并先 add-mask，不再写 GITHUB_ENV。
+```
 
 ## 当前发布链
 
 - PR / 非 main：`compileDebugKotlin` → `testDebugUnitTest` → `assembleDebug` → Debug artifact；不发布 GitHub Release。
-- main：恢复 `echo-preview-test-signing-v1` Actions cache；首次 cache miss 时 Runner 自动生成测试 keystore。
-- main 使用 `assembleRelease` 产出 `Echo-preview.apk`。
-- keystore 不提交 Git，也不进入 Preview Release；测试者无需手动配置 keystore、密码或 Repository Secrets。
+- main：固定测试签名 + `assembleRelease` → GitHub prerelease。
 - `versionName = 3.12`。
-- `versionCode = 3_120_000 + GITHUB_RUN_NUMBER`；Preview #16 为 `3120016`。
-- 测试签名依赖 GitHub Actions Cache，不视为正式生产签名体系；若 cache 将来被清除，可能再次需要一次完整卸载迁移。
+- `versionCode = 3_120_000 + GITHUB_RUN_NUMBER`。
+- 测试签名不是正式生产签名体系。
 
 ## 最近完成
 
 | work_id | 结果 | 提交 / PR | 验证 | `[UNRUN]` / 下一步 |
 | --- | --- | --- | --- | --- |
-| `fixed-release-signing-v3.12-20260912-webgpt` | PR Debug / main Release 拆分；3.12；单调 versionCode；Actions Cache 自动维护测试签名；无需用户配置 Secrets | PR #9；merge `98e07522b4e89cd59f8eaffdf0258933799b7d09`；Preview #16 | PR workflow commit CI run #13：compile/unit/assembleDebug ✅；main CI run #16：compile/unit ✅、测试签名恢复/生成 ✅、`assembleRelease` ✅、signed Preview artifact ✅、GitHub prerelease ✅ | 旧 Debug → Preview #16 一次卸载迁移 `[UNRUN]`；Preview #16 → 下一更高 versionCode 覆盖升级 `[UNRUN]` |
-| `pc-relay-v1-20260912-webgpt` | Echo 本机通知 fallback + Android 13+ 通知权限门 + Phone Link 最小出口 | PR #8；merge `2fa6be55d286089a1d6acf60357aa213ecccabb8`；Preview #8 | PR CI + main CI ✅ | Echo→Phone Link→Windows 最终真机链仍待用户验证 |
+| `fixed-release-signing-v3.12-20260912-webgpt` | 固定测试签名发布链已闭环 | PR #9；merge `98e07522b4e89cd59f8eaffdf0258933799b7d09`；Preview #16/#18 | #16 安装成功；未卸载 #16 直接覆盖 #18 返回 `Success`；#16/#18 证书一致；覆盖前后数据目录标识一致；#18 `MainActivity` `Status: ok` | 签名覆盖问题已关闭；后续只需处理日志暴露问题 |
+| `pc-relay-v1-20260912-webgpt` | Echo 本机通知 fallback + Android 13+ 通知权限门 + Phone Link 最小出口 | PR #8；merge `2fa6be55d286089a1d6acf60357aa213ecccabb8`；Preview #8 | PR CI + main CI ✅ | 权限实际授权、页面视觉、后台通知、Echo→Phone Link→Windows 端到端仍 `[UNRUN]` |
+
+## 安全事件 / 发布链注意事项
+
+- #16 Actions：`https://github.com/z3093508903-rgb/echo/actions/runs/34701623661`
+- #18 Actions：`https://github.com/z3093508903-rgb/echo/actions/runs/34701899520`
+- 两个公开日志都出现未遮蔽的 `MESSAGE_RELAY_KEYSTORE_PASSWORD` / `MESSAGE_RELAY_KEY_PASSWORD`。
+- 旧 v1 密码还是由公开 `GITHUB_REPOSITORY` 可确定性计算得到，因此即使只隐藏日志也不够。
+- 当前 keystore 本体没有被发布到 Release；但测试签名链仍应立即把密码改为随机值，并避免跨 step 暴露。
+- 本次修复要求 **保留原 key/certificate**，避免让用户再卸载一次；只重新封装 keystore 密码与 cache key。
 
 ## 已冻结边界
 
-- 当前单人 Preview 测试阶段允许使用 cache-backed 测试签名；它不是正式生产身份。
+- #16 → #18 覆盖升级问题已真机关闭，不再把 `INSTALL_FAILED_UPDATE_INCOMPATIBLE` 作为当前 blocker。
+- 当前单人 Preview 测试阶段允许 cache-backed 测试签名；它不是正式生产身份。
 - Preview Release 必须来自 `assembleRelease`；PR Debug artifact 不作为持续安装包。
-- 历史 Preview #1/#4/#8 使用随机 Debug 签名，迁移到 Preview #16 必须完整卸载一次。
-- 后续若 cache 签名保持不变且 versionCode 更高，应可直接覆盖；必须由真机验证后才能宣称闭环完成。
 - Echo 不要求 Bark、飞书或钉钉；第三方转发只是可选能力。
 - **PC-first**：现阶段优先复用 Windows Phone Link。
 - Room Entity 变化必须有 Migration；DataStore 新字段必须有默认值。
 
 ## 下一条开发链
 
-1. 用户卸载当前旧随机 Debug 签名 Echo（如需保留配置先自行备份）。
-2. 安装 `Echo 3.12 Preview #16`。
-3. 验证 Echo 本机通知 → Windows Phone Link → Windows。
-4. 下一次代码迭代发布更高 versionCode Preview 后，直接覆盖安装 #16；若成功，则关闭 `INSTALL_FAILED_UPDATE_INCOMPATIBLE` 发布链问题。
+1. 修复 Actions 日志泄露：随机化测试 keystore 密码、mask、停止密码进入 `GITHUB_ENV`。
+2. 用 v2 cache 保存同一签名证书下重新封装的 keystore。
+3. PR CI 通过后合并；main 自动发布下一 Preview。
+4. 真机直接覆盖当前 #18，确认签名证书未变化且无需卸载。
+5. 然后进入 `Echo → Phone Link → Windows` 端到端功能验证。
 
 ## 完成 / 交接
 
 ```text
-changed: PR Debug/main Release 拆分；Actions Cache 测试签名；assembleRelease Preview；versionName 3.12；versionCode 3_120_000+run_number
-commit: merge 98e07522b4e89cd59f8eaffdf0258933799b7d09
-remote: PR #9 merged
-checks: PR CI run #13 PASS；main CI run #16 PASS；Echo 3.12 Preview #16 published
+changed: #16→#18 覆盖升级真机验证通过；发现公开 Actions 日志泄露测试签名密码；已登记安全修复 work
+checks: #16 install PASS；#16→#18 direct overlay PASS；same cert PASS；same data dir PASS；#18 MainActivity Status: ok
 data_or_schema: 无 Room/DataStore schema 变化
-unrun: 旧 Debug→#16 真机卸载迁移；#16→下一 Preview 覆盖升级；Echo→Phone Link→Windows 业务链
-rollback: 回退 PR #9 可恢复旧 Debug 发布链，但会重新引入随机签名问题，不建议
-next: 用户安装 Preview #16 并继续真机测试
+unrun: 权限实际授权；页面视觉；后台通知；Echo→Phone Link→Windows；v2 cache 密码迁移
+rollback: 若 v2 cache 迁移异常，回退 workflow 到当前 v1，但不得继续接受公开明文密码日志
+next: 完成 signing-log-hardening PR 并验证新 Preview 可直接覆盖 #18
 ```
 
 ## 协作规则摘要
