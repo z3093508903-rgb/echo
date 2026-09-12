@@ -9,86 +9,64 @@
 | 项目 | 回声 Echo |
 | 仓库 | `z3093508903-rgb/echo` |
 | 默认分支 | `main` |
-| 当前阶段 | PC-first 最小闭环源码已完成并通过 PR CI，准备合入 main 发布 Preview 真机验证 |
-| 更新时间 | `2026-09-12T16:04:00+08:00` |
-| Android 业务代码改动 | 无外部渠道时新增 Echo 本机通知 fallback；新增 Android 13+ 通知权限门；应用显示名改为回声 Echo |
-| 真机构建与运行 | 新版 `[UNRUN]`；Windows Phone Link 已成功连接并保持代理开启可用 |
+| main HEAD | `2fa6be55d286089a1d6acf60357aa213ecccabb8` |
+| 当前阶段 | 修复 Preview 固定 Release 签名与单调 versionCode 发布链 |
+| 更新时间 | `2026-09-12T22:07:00+08:00` |
+| Android 业务代码改动 | 本 work 不改通知业务逻辑，只改构建/发布配置与版本信息 |
+| 真机构建与运行 | Preview #8 已发布；旧 Preview 使用 GitHub Runner 随机 Debug 签名，跨 Preview 覆盖安装可能报 `INSTALL_FAILED_UPDATE_INCOMPATIBLE` |
 
 ## 产品定位
 
-Echo 是一个 **本地优先的 Android 注意力防火墙**。当前冻结一条第一性原理：**手机负责捕获，电脑优先负责消费信息**。目标不是在手机里再造一个信息中心，而是减少“拿起手机检查 → 顺手打开原平台”的机会。
-
-当前最小链路：
-
-```text
-来源 App 系统通知 → Echo 规则处理 → Echo 自己生成 Android 通知 → Windows Phone Link 同步 Echo 通知到电脑
-```
-
-本阶段不新增服务器、ntfy、Gotify、GitHub 消息仓库、GPT 实时中转或 Echo Desktop。先验证微软现成通路是否足以降低主动拿手机次数。
+Echo 是一个 **本地优先的 Android 注意力防火墙**。当前冻结第一性原则：**手机负责捕获，电脑优先负责消费信息**。发布链必须支持连续真机迭代，因此 Preview 必须使用稳定签名和单调递增 `versionCode`。
 
 ## 进行中的工作
 
 ```text
-work_id: pc-relay-v1-20260912-webgpt
+work_id: fixed-release-signing-v3.12-20260912-webgpt
 agent: 网页 GPT
-branch@base: gpt/echo-pc-relay-v1-20260912@34f856acf9f00314de2210338a7e3f7c5cea9b4f
-goal: 当来源通知命中 Echo 现有规则且没有外部 Bark/飞书/钉钉渠道时，生成一条 Echo 自身 Android 通知，供 Windows Phone Link 只同步 Echo；Android 13+ 首次启动时请求 Echo 通知权限
-owns: PROJECT_HANDOFF.md; app/src/main/java/io/github/messagerelay/RelayEngine.kt; app/src/main/java/io/github/messagerelay/RelayNotificationService.kt; app/src/main/java/io/github/messagerelay/EchoNotificationPublisher.kt; app/src/main/java/io/github/messagerelay/EchoLauncherActivity.kt; app/src/main/AndroidManifest.xml
-status: handoff-ready
-updated_at: 2026-09-12T16:04:00+08:00
-notes: PR #8 CI run #6 已真实通过 compileDebugKotlin、testDebugUnitTest、assembleDebug、artifact。首次 run #5 因权限回调参数写成 Array<out String> 编译失败，已改为 Android 当前签名要求的 Array<String> 并重新验证通过。lintDebug workflow 未覆盖，继续 [UNRUN]。下一步合入 main 并等待自动 Preview，再由用户验证 Echo 通知 → Phone Link → Windows。
+branch@base: gpt/fixed-release-signing-v3.12-20260912@2fa6be55d286089a1d6acf60357aa213ecccabb8
+goal: PR 保持 Debug CI；main Preview 改为固定签名 assembleRelease；缺签名 Secrets 时禁止发布；versionCode 每次 main 发布单调递增；目标 versionName 同步到 3.12
+owns: PROJECT_HANDOFF.md; .github/workflows/android-ci.yml; app/build.gradle.kts; docs/RELEASE_SIGNING.md
+status: editing
+updated_at: 2026-09-12T22:07:00+08:00
+notes: 当前 GitHub connector 不提供 Repository Secrets 写接口，因此代码会强制要求 Secrets 齐全后才允许 main Release 发布，但 keystore/password Secrets 需仓库管理员在 GitHub Settings 中一次性添加。不得提交 keystore 或密码。旧随机 Debug 签名用户迁移到固定 Release 签名时仍需完整卸载一次；之后相同固定签名 + 更高 versionCode 应可直接覆盖升级。
 ```
 
-## 本轮设计边界
+## 本轮发布约束
 
-- **无外部渠道时**：Echo 本机通知成为默认输出，不再把“未配置渠道”视为发送失败。
-- **有外部渠道时**：保持现有 Bark / 飞书 / 钉钉行为，本轮不叠加 Echo 本机通知，避免双重提醒。
-- Echo 本机通知点击只打开 Echo，不跳回原社交 App。
-- Android 13+ 首次启动通过 `EchoLauncherActivity` 请求 `POST_NOTIFICATIONS`；该 Activity 不承载业务状态，授权或拒绝后立即进入现有 `MainActivity`。
-- Echo 运行状态通知标记 `localOnly`，避免把“Echo 正在运行”当成业务消息桥接到其他设备。
-- 记录层只有本机 `NotificationManager.notify()` 成功后才写发送成功；这不代表 Windows 已收到。
-- Phone Link 端由用户设置为只同步 Echo；来源 App 原通知是否在 PC 显示由 Windows Phone Link 控制。
-- 不上传真实通知正文、Token、数据库或日志到 GitHub。
+- Pull Request：继续执行 Debug Kotlin 编译、Debug 单元测试、`assembleDebug`，可上传 Debug CI artifact，但不发布 GitHub Release。
+- `main` / main 手动运行：发布物必须来自 `assembleRelease`，不得再发布 `app-debug.apk`。
+- 固定签名通过 GitHub Actions Secrets 注入：workflow 在 Runner 临时目录还原 keystore，并映射现有 `MESSAGE_RELAY_KEYSTORE_PATH`、`MESSAGE_RELAY_KEYSTORE_PASSWORD`、`MESSAGE_RELAY_KEY_ALIAS`、`MESSAGE_RELAY_KEY_PASSWORD`。
+- Secrets 缺任意一项时，main Release job 必须明确失败，且后续 GitHub Release 步骤不得执行。
+- keystore、密码、base64 私钥内容不得进入源码、日志、artifact 或 Release。
+- `versionCode` 由 main workflow 注入单调递增值；`versionName` 本轮目标为 `3.12`。
+- 旧随机 Debug 签名 Preview 无法被新固定 Release 签名原地覆盖；用户需完整卸载旧版一次。该迁移会清除当前 app 本地数据，需在 Release 说明中明确提示。
+- 不改 Room/DataStore schema。
 
 ## 最近完成
 
 | work_id | 结果 | 提交 / PR | 验证 | `[UNRUN]` / 下一步 |
 | --- | --- | --- | --- | --- |
-| `pc-relay-v1-20260912-webgpt` | 新增 `EchoNotificationPublisher`；无外部渠道走 Echo 本机通知；一次性 Android 13+ 通知权限门；应用名改为 `回声 Echo`；运行状态通知 `localOnly` | PR #8；feature head `5756dbc19fd9a55751d441237836a4cf88d83fb8` + 本交接 commit | PR CI run #6：compileDebugKotlin ✅、testDebugUnitTest ✅、assembleDebug ✅、artifact ✅ | `lintDebug`、APK 真机、Echo→Phone Link→Windows 均 `[UNRUN]`；唯一下一步：merge + Preview 真机验证 |
-| `onboarding-v1-20260912-webgpt` | 四步 onboarding → 两步；移除 Bark/飞书/钉钉强制门槛；修复主题对比度 | PR #7；merge `34f856acf9f00314de2210338a7e3f7c5cea9b4f`；Preview #4 | PR CI compile/unit/assemble ✅；main CI + Release ✅；用户已安装并确认可正常进入 | 阻塞问题已解除 |
-| `phone-link-setup-20260912-user` | Windows Phone Link / Android Link to Windows 配对成功；首次微软登录因代理报 `0x80190001`，退出代理完成认证后重新开启代理仍保持正常连接 | 用户现场验证 | Windows 与手机当前正常连接 | 下一步验证 Echo 自身通知能否稳定出现在 Windows |
-| `release-pipeline-20260912-webgpt` | 自动 APK artifact + main prerelease 发布链 | PR #4 | Preview #1 / #4 已真实发布 | 后续 main push 自动生成 Preview |
+| `pc-relay-v1-20260912-webgpt` | Echo 本机通知 fallback + Android 13+ 通知权限门 + Phone Link 最小出口 | PR #8；merge `2fa6be55d286089a1d6acf60357aa213ecccabb8`；Preview #8 | PR CI compile/unit/assembleDebug ✅；main CI/Preview #8 ✅ | Echo→Phone Link→Windows 最终真机链仍由用户验证 |
+| `onboarding-v1-20260912-webgpt` | 四步 onboarding → 两步；移除渠道强制门槛；修复主题对比度 | PR #7；merge `34f856acf9f00314de2210338a7e3f7c5cea9b4f`；Preview #4 | CI ✅；用户真机可进入 | 阻塞已解除 |
+| `release-pipeline-20260912-webgpt` | 自动 APK artifact + prerelease | PR #4 | Preview #1/#4/#8 已发布 | 当前发现发布的是随机 Debug 签名 APK，本 work 修复 |
 
 ## 已冻结边界
 
 - Echo 不要求 Bark、飞书或钉钉；第三方转发只是可选能力。
 - **PC-first**：现阶段优先复用 Windows Phone Link，不新增自建 PC 通信实体。
-- “Echo 生成了本机通知”与“Windows 已收到”必须严格区分；后者需要用户真机实测。
-- 第一阶段仍不凭想象硬编码微信、抖音、小红书的 P0/P1/P2/P3 分类；先让观察与出口链路跑通。
-- 测试 APK 通过 GitHub Actions 产出并发布 GitHub Preview/Prerelease。
+- Preview 从本 work 起必须采用固定 Release 签名；CI Debug artifact 与可安装 Preview Release 是两类不同产物。
+- 测试结果只记录真实执行值；Secrets 尚未配置时不得声称 signed Release 已发布成功。
 - Room Entity 变化必须有 Migration；DataStore 新字段必须有默认值。
-- 未经真机验证的行为必须标记 `[UNRUN]` / `[UNVERIFIED]`。
 
 ## 下一条开发链
 
-1. 合入 PR #8，等待 main 自动 Actions 通过并发布新的 Preview APK。
-2. 用户安装 Preview，允许“回声 Echo”发送通知。
-3. Windows Phone Link 中只保留 Echo 的 PC 通知，关闭微信/抖音/小红书等来源 App 的 PC 通知。
-4. 触发一个已选来源 App 的真实通知，验证：手机 Echo 产生一条通知 → Windows 出现同一条 Echo 通知。
-5. 若闭环成立，下一独立 work 实现 Notification Observatory；若不成立，先定位 Android 本机通知、Phone Link App 选择或桥接层哪一段失败。
-
-## 完成 / 交接
-
-```text
-changed: 无外部渠道时使用 Echo 自身 Android 通知作为默认输出；新增 Android 13+ 一次性通知权限门；应用显示名切换为回声 Echo；运行状态通知 localOnly
-commit: feature latest before handoff doc = 5756dbc19fd9a55751d441237836a4cf88d83fb8
-remote: gpt/echo-pc-relay-v1-20260912 / PR #8
-checks: Android CI run #6 -> compileDebugKotlin PASS; testDebugUnitTest PASS; assembleDebug PASS; artifact PASS
-data_or_schema: 无 Room/DataStore schema 变化；新增 app-private SharedPreferences 仅记录 POST_NOTIFICATIONS 是否已询问一次
-unrun: lintDebug；Android 真机权限弹窗；Echo 本机通知；Phone Link 最终同步；Windows toast
-rollback: 回退 PR #8 merge commit 即可；无数据库迁移
-next: merge PR #8，安装 main 自动发布的 Preview 后验证 Echo → Phone Link → Windows
-```
+1. 修改 `app/build.gradle.kts`：支持 workflow 注入单调 versionCode，默认/目标 versionName 设为 `3.12`。
+2. 修改 Android CI：PR 走 Debug；main 预检签名 Secrets、临时还原 keystore、`assembleRelease`、上传/发布固定签名 APK。
+3. 增加不含秘密的 `docs/RELEASE_SIGNING.md`，只记录 Secret 名称、一次性配置与迁移规则。
+4. PR CI 验证 Debug 链不回归。
+5. 仓库管理员添加固定签名 Secrets 后，合入 main 并验证 main Release；若 Secrets 未配置，预期 main workflow 应失败且不得产生新 Preview Release。
+6. 首个固定签名 Preview：旧随机签名用户完整卸载一次再安装；后续版本验证可直接覆盖升级。
 
 ## 协作规则摘要
 
