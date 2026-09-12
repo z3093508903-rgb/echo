@@ -10,10 +10,10 @@
 | 仓库 | `z3093508903-rgb/echo` |
 | 默认分支 | `main` |
 | main HEAD | `bea65d0989042619d2c749978c3918572c0d5b18` |
-| 当前阶段 | 真机反馈确认：当前实现仍是“监听后转发”，原通知未被 Echo 接管；下一步实现来源通知取消 + 无延迟本机 fast path |
-| 更新时间 | `2026-09-13T00:58:00+08:00` |
-| Android 业务代码改动 | 本轮正在修改通知接管与本机即时重发路径；不改 Room/DataStore schema |
-| 真机构建与运行 | #16 → #18 覆盖链已通过；当前用户反馈：Echo 有延时、原 App 弹窗未被拦截、关闭源 App 通知后 Echo 无法捕获、Phone Link 未收到 Echo 通知 |
+| 当前阶段 | 来源通知 takeover + 无外部渠道即时本机 fast path 已编码，正在等待 PR CI 验证 |
+| 更新时间 | `2026-09-13T01:07:00+08:00` |
+| Android 业务代码改动 | 已实现来源通知取消策略与本机即时重发；不改 Room/DataStore schema |
+| 真机构建与运行 | #16 → #18 覆盖链已通过；本轮新 takeover/fast-path 仍待 CI 与真机 |
 
 ## 产品定位
 
@@ -30,12 +30,17 @@ Echo 是一个 **本地优先的 Android 注意力防火墙**。当前阶段优�
   - `PROJECT_HANDOFF.md`
   - `app/src/main/java/io/github/messagerelay/RelayNotificationService.kt`
   - `app/src/main/java/io/github/messagerelay/RelayEngine.kt`
-  - `app/src/main/java/io/github/messagerelay/NotificationTakeoverPolicy.kt`（如需新增）
-  - `app/src/test/java/io/github/messagerelay/NotificationTakeoverPolicyTest.kt`（如需新增）
-- status: `in_progress`
-- updated_at: `2026-09-13T00:58:00+08:00`
+  - `app/src/main/java/io/github/messagerelay/NotificationTakeoverPolicy.kt`
+  - `app/src/test/java/io/github/messagerelay/NotificationTakeoverPolicyTest.kt`
+- status: `verifying`
+- updated_at: `2026-09-13T01:07:00+08:00`
+- implemented:
+  - 只有已启用来源规则才进入 takeover 流程
+  - Echo 暂停、Echo 无通知权限、无法提取正文、ONGOING 持续通知时不会取消来源通知，避免静默丢消息
+  - 普通可读来源通知在进入规则/去重处理前调用 `cancelNotification(sbn.key)`
+  - 无延迟、未开启合并且没有外部渠道时直接调用 `EchoNotificationPublisher`，不再进入 WorkManager
+  - 本机 direct path 与 Worker fallback 共用同一记录写入逻辑
 - constraints:
-  - 只接管已启用的来源 App；Echo 自己的通知永不递归处理
   - 用户把来源 App 的系统通知总开关关闭后，Android 不产生可监听通知，此边界无法由 Echo 绕过
   - 本轮不新增 Windows 协议、不依赖 Phone Link 成功
   - 不修改 Room Entity / DataStore schema
@@ -74,22 +79,22 @@ Echo 是一个 **本地优先的 Android 注意力防火墙**。当前阶段优�
 
 ## 下一条开发链
 
-1. `notification-takeover-fastpath-20260913-webgpt`：只对已启用来源 App 取消原通知，并建立本机即时重发 fast path。
-2. PR CI 通过后合并，main 自动发布新的 v2 Preview。
+1. PR CI 验证 `notification-takeover-fastpath-20260913-webgpt` 的 Kotlin 编译、单测和 Debug APK。
+2. CI 通过后合并，main 自动发布新的 v2 Preview。
 3. 真机验证：来源 App 通知总开关保持开启、横幅/声音关闭；检查原通知是否被快速清除、Echo 是否立即重发、后台是否稳定。
 4. Android 接管成立后，再单独判断 Phone Link 是否值得继续；若仍不可靠，再讨论局域网 Echo Bridge，而不是现在并行增加新实体。
 
 ## 完成 / 交接
 
 ```text
-changed: [IN PROGRESS] 通知接管 + 本机 fast path
-commit: [IN PROGRESS]
+changed: 已实现通知 takeover 安全策略；普通已选来源通知可取消；无外部渠道 + 零延迟 + 无合并时本机 direct publish，绕过 WorkManager；Worker 本机 fallback 复用同一记录逻辑
+commit: 734631b + 5f069e1 + 006973f + 722d5ed（feature commits）
 remote: gpt/notification-takeover-fastpath-20260913
-checks: [UNRUN] compileDebugKotlin / testDebugUnitTest / assembleDebug / real device
-data_or_schema: 计划无 Room/DataStore schema 变化
-unrun: 当前全部待实现与验证
+checks: [UNRUN] PR compileDebugKotlin / testDebugUnitTest / assembleDebug；[UNRUN] real device
+data_or_schema: 无 Room/DataStore schema 变化
+unrun: CI 与真机 takeover/延时/后台验证
 rollback: 回退本 feature PR 即可恢复现有“监听后 WorkManager 转发”逻辑
-next: 完成实现后跑 PR CI，再交付真机测试
+next: 开 PR 跑 CI；绿色后合并并发布 Preview 给用户真机测试
 ```
 
 ## 协作规则摘要
