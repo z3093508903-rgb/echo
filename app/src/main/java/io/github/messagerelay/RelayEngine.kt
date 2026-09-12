@@ -173,6 +173,35 @@ class RelayWorker(context: Context, params: WorkerParameters) : CoroutineWorker(
                 return Result.failure()
             }
         }
+
+        if (channels.isEmpty()) {
+            val publish = EchoNotificationPublisher.publish(applicationContext, message)
+            val resultJson = JSONArray()
+                .put(
+                    JSONObject()
+                        .put("channel", "echo_local")
+                        .put("success", publish.success)
+                        .put("error", publish.error)
+                )
+                .toString()
+            dao.addRecord(
+                DeliveryRecord(
+                    packageName = message.packageName,
+                    app = message.app,
+                    title = message.title,
+                    body = if (RecordRetentionPolicy.shouldKeepBody(settings.historyRetention)) message.body else "",
+                    status = if (publish.success) "成功" else "发送失败",
+                    channelResults = resultJson,
+                    createdAt = System.currentTimeMillis(),
+                    delayed = inputData.getBoolean("delayed", false)
+                )
+            )
+            RecordRetentionPolicy.cutoffMillis(settings.historyRetention, System.currentTimeMillis())?.let { dao.deleteRecordsOlderThan(it) }
+            dao.trimRecords()
+            RelayWidget.refresh(applicationContext)
+            return if (publish.success) Result.success() else Result.failure()
+        }
+
         val template = (dao.template(requestedTemplate)?.definition() ?: TemplateCatalog.byId(TemplateCatalog.STANDARD_ID)).template()
         val secure = SecureStore(applicationContext)
         val relayUrl = secure.get("relay_url").orEmpty()
@@ -180,7 +209,6 @@ class RelayWorker(context: Context, params: WorkerParameters) : CoroutineWorker(
         else channels.map { ChannelSender.send(it, template.renderTitle(message), template.renderBody(message)) }
         val successes = results.count(DeliveryResult::success)
         val status = when {
-            channels.isEmpty() -> "未配置渠道"
             successes == channels.size -> "成功"
             successes > 0 -> "部分成功"
             else -> "发送失败"
@@ -191,7 +219,7 @@ class RelayWorker(context: Context, params: WorkerParameters) : CoroutineWorker(
         dao.trimRecords()
         RelayWidget.refresh(applicationContext)
         return when {
-            results.isNotEmpty() && results.all(DeliveryResult::success) -> Result.success()
+            results.all(DeliveryResult::success) -> Result.success()
             settings.retryEnabled && results.any(DeliveryResult::retryable) && runAttemptCount < settings.maxRetryCount -> Result.retry()
             else -> Result.failure()
         }
